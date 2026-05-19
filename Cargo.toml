@@ -1,0 +1,69 @@
+[workspace]
+resolver = "3"
+members = [
+  "crates/fredshell",
+  "crates/fredshell-core",
+  "crates/fredshell-prompt",
+  "xtask",
+]
+default-members = [
+  "crates/fredshell",
+  "crates/fredshell-core",
+  "crates/fredshell-prompt",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.95.0"
+description = "An opinionated, batteries-included Rust shell"
+documentation = "https://github.com/fredsystems/fredshell/README.md"
+readme = "README.md"
+homepage = "https://github.com/fredsystems/fredshell"
+repository = "https://github.com/fredsystems/fredshell"
+license = "MIT"
+keywords = ["shell", "cli", "repl", "bash", "posix"]
+categories = ["command-line-utilities"]
+
+[workspace.dependencies]
+# CLI / errors / logging
+anyhow = "1.0"
+clap = { version = "4.6", features = ["derive"] }
+clap-cargo = { version = "0.18", features = ["cargo_metadata"] }
+clap-verbosity-flag = "3.0"
+color-eyre = "0.6"
+thiserror = "2.0"
+tracing = "0.1"
+tracing-appender = "0.2"
+tracing-log = "0.2"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "parking_lot"] }
+
+# Config / data
+directories = "6.0"
+serde = { version = "1.0", features = ["derive"] }
+toml = "1.1"
+
+# Shell pieces
+reedline = "0.43"
+nu-ansi-term = "0.50"
+nix = { version = "0.31", features = ["process", "signal", "term"] }
+libc = "0.2"
+shell-words = "1.1"
+
+# Search / fuzzy / git
+nucleo = "0.5"
+gix = { version = "0.74", default-features = false, features = ["max-performance-safe"] }
+
+# Bash compat — parser/interpreter to delegate to until our own grows up
+# (We're not depending on this yet, but reserving the slot.)
+
+# xtask helpers
+cargo_metadata = "0.23"
+duct = "1.1"
+semver = "1.0"
+
+# Test helpers
+assert_cmd = "2.2"
+predicates = "3.1"
+tempfile = "3.27"
+test-log = { version = "0.2", features = ["trace"] }

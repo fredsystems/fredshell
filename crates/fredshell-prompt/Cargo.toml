@@ -1,0 +1,14 @@
+[package]
+name = "fredshell-prompt"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Starship-style prompt renderer baked into fredshell"
+
+[dependencies]
+anyhow.workspace = true
+gix.workspace = true
+nu-ansi-term.workspace = true
+serde = { workspace = true }
+tracing.workspace = true

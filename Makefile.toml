@@ -1,0 +1,34 @@
+[env]
+CARGO_MAKE_EXTEND_WORKSPACE_MAKEFILE = true
+CARGO_MAKE_WORKSPACE_SKIP_MEMBERS = ["xtask"]
+
+[tasks.format]
+condition = { profiles = ["development"] }
+install_crate = "rustfmt"
+command = "cargo"
+args = ["fmt", "--", "--emit=files"]
+
+[tasks.build]
+command = "cargo"
+args = ["build"]
+dependencies = ["format"]
+
+[tasks.br]
+workspace = false
+command = "cargo"
+args = ["build", "--release"]
+
+[tasks.rr]
+workspace = false
+command = "cargo"
+args = ["run", "--release", "-p", "fredshell"]
+
+[tasks.test]
+command = "cargo"
+args = ["test"]
+dependencies = ["build"]
+
+[tasks.x]
+command = "cargo"
+args = ["xtask", "check"]
+workspace = false

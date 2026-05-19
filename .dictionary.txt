@@ -1,0 +1,5 @@
+crate
+fredshell
+nushell
+reedline
+zsh
