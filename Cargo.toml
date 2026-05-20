@@ -62,6 +62,12 @@ serde = { version = "=1.0.228", features = ["derive"] }
 # Shell pieces
 shell-words = "=1.1.1"
 
+# Internal crates
+fredshell-ansi = { version = "=0.1.0", path = "crates/fredshell-ansi" }
+
+# Terminal / OS
+libc = "=0.2.186"
+
 # xtask helpers
 duct = "=1.1.1"
 

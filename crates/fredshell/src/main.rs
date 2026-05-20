@@ -37,10 +37,23 @@ fn main() -> Result<()> {
     init_tracing(&cli);
 
     if let Some(cmd) = cli.command.as_deref() {
-        return fredshell_core::run_oneshot(cmd);
+        fredshell_core::run_oneshot(cmd)?;
+        return Ok(());
     }
 
-    fredshell_core::repl::run(fredshell_core::repl::Options { login: cli.login })
+    // Interactive shells ignore SIGQUIT so Ctrl-\ at the prompt does
+    // not core-dump the shell. The policy is installed in the binary
+    // (not in fredshell-core) because non-interactive consumers of
+    // TerminalSession — e.g. `xtask tty-probe` — must keep the
+    // kernel-default SIGQUIT disposition. See PLAN_04 §4 and AGENTS
+    // workflow Q&A for 04.10. Failure here is non-fatal: log and
+    // continue so a misconfigured /proc still gives the user a shell.
+    if let Err(e) = fredshell_core::tty::signal::ignore_sigquit() {
+        eprintln!("fredshell: could not install SIGQUIT=SIG_IGN: {e}");
+    }
+
+    fredshell_core::repl::run(&fredshell_core::repl::Options { login: cli.login })?;
+    Ok(())
 }
 
 fn init_tracing(cli: &Cli) {

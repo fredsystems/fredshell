@@ -457,7 +457,8 @@ dependencies = [
 name = "fredshell-core"
 version = "0.1.0"
 dependencies = [
- "anyhow",
+ "fredshell-ansi",
+ "libc",
  "shell-words",
 ]
 
@@ -1577,6 +1578,7 @@ dependencies = [
  "clap",
  "color-eyre",
  "duct",
+ "fredshell-core",
 ]
 
 [[package]]
