@@ -211,9 +211,11 @@ pub struct ExecEnv {
     /// the host filesystem is reachable, hashing of resolved paths.
     pub path_policy: PathPolicy,
 
-    /// Signal-handling policy. The host decides whether the executor
-    /// installs signal handlers (binary: yes; harness: no, child
-    /// processes inherit defaults).
+    /// Signal-handling policy. `Install` (binary default) installs
+    /// handlers for SIGINT, SIGTSTP, SIGCHLD, SIGPIPE, SIGALRM and
+    /// routes signals to the foreground process group. `None`
+    /// (harness default) installs no handlers; child processes
+    /// inherit defaults. See §6.1 for the responsiveness model.
     pub signal_policy: SignalPolicy,
 }
 ```
@@ -287,6 +289,9 @@ pub struct Tier2Ctx<'a> {
     pub stdin: &'a mut dyn Read,
     pub stdout: &'a mut dyn Write,
     pub stderr: &'a mut dyn Write,
+    /// Cooperative cancellation. Set by the signal handler on SIGINT
+    /// (and by `timeout`/`read -t` via SIGALRM). See §6.1.3.
+    pub cancellation: &'a AtomicBool,
 }
 ```
 
@@ -418,6 +423,120 @@ Notable non-uses of async:
   semantics for `wait` and trap handling.
 - The parser is synchronous. There is no use case for async parsing.
 - The spec harness is synchronous (per PLAN_05 §10 open question).
+
+## 6.1. Responsiveness without async
+
+"Synchronous core" must not be confused with "blocking core." A shell
+that blocks indefinitely on a stuck child process, ignores Ctrl-C
+while a builtin is running, or freezes its prompt while `git fetch`
+hangs is a broken shell. Real bash is synchronous C with careful
+signal handling and `poll`/`select`; it is responsive without an
+async runtime. fredshell takes the same path, and this section pins
+down what that means concretely.
+
+The architecture commits to five mechanisms. PLAN_04 (signals, raw
+mode) and PLAN_06 (executor, job control) own the implementations.
+This document owns the commitments.
+
+### 6.1.1. Signal-correct foreground job control
+
+The executor installs handlers for `SIGINT`, `SIGTSTP`, `SIGCHLD`,
+and `SIGPIPE` at session construction (when `SignalPolicy::Install`
+is in effect; the spec harness uses `SignalPolicy::None`). Signals
+delivered to the shell from the controlling TTY are routed to the
+foreground process group, not absorbed silently. Ctrl-C is observable
+to running children; the shell itself ignores `SIGINT` once it has a
+foreground pgid that owns the tty.
+
+This is the standard POSIX job-control model. It is not optional and
+it is not negotiable.
+
+### 6.1.2. Multiplexed wait + input via `pselect`/`poll`
+
+The executor never calls a bare blocking `waitpid` while the shell
+also wants to remain interactive. When the shell is in the REPL state
+between commands, it waits for either input on the tty fd or
+`SIGCHLD` (background job completion) using `pselect` with an
+appropriate signal mask. When a foreground job is running, the shell
+yields the tty to the child's pgid and waits on `SIGCHLD` for that
+pgid specifically.
+
+Background jobs (`&`) make progress because their state is reaped
+opportunistically via `waitpid(WNOHANG)` from the `SIGCHLD` handler
+(or, on platforms where `signalfd` is preferable, via the equivalent
+read). The prompt re-renders job-status changes (`[1]+ Done ...`) the
+next time it draws.
+
+### 6.1.3. Cancellation tokens for long-running builtins
+
+`Tier2Ctx` exposes a cancellation flag:
+
+```rust
+pub struct Tier2Ctx<'a> {
+    pub args: &'a [OsString],
+    pub cwd: &'a Path,
+    pub env: &'a HashMap<OsString, OsString>,
+    pub stdin: &'a mut dyn Read,
+    pub stdout: &'a mut dyn Write,
+    pub stderr: &'a mut dyn Write,
+    /// Set by the signal handler when SIGINT is delivered while
+    /// this builtin owns the foreground. Builtins that loop MUST
+    /// check this between iterations and return early with the
+    /// conventional 130 exit status when set.
+    pub cancellation: &'a AtomicBool,
+}
+```
+
+Tier-1 builtins receive the same flag through the broader executor
+state. A tier-2 builtin that loops without checking cancellation is
+a correctness bug; the spec corpus includes cancellation tests for
+the builtins where this matters (`grep -r`, `find`, `sort` over
+large inputs, etc.) once those are implemented.
+
+The flag is the **only** cross-thread synchronization primitive
+required by the executor. Atomics, not channels, not async.
+
+### 6.1.4. Timeout via `setitimer` / `SIGALRM`
+
+`timeout` (the bash-compatible builtin / external command) and
+`read -t` are implemented via `setitimer(ITIMER_REAL, ...)` plus a
+`SIGALRM` handler that sets the cancellation flag and signals the
+relevant pgid. No async timer runtime is involved.
+
+This generalizes: any built-in deadline behavior in the executor
+flows through the same mechanism. The cost is one global per-session
+itimer slot, multiplexed by a priority queue if multiple deadlines
+are concurrently active.
+
+### 6.1.5. `poll`-driven pipeline I/O
+
+Pipeline fd plumbing uses `poll` (or `epoll`/`kqueue` where
+beneficial) rather than blocking reads on individual fds. A stuck
+producer in `cmd1 | cmd2 | cmd3` does not prevent the consumer side
+from receiving `SIGPIPE` and exiting cleanly. Process substitutions
+(`<(cmd)`, `>(cmd)`) use the same machinery.
+
+Implementation lives in `fredshell-core::exec::pipeline`. The
+abstraction is narrow enough that the harness can substitute an
+in-memory transport for tests that exercise pipeline semantics
+without spawning real children.
+
+### Summary
+
+| Concern                       | Mechanism                                | Owner           |
+| ----------------------------- | ---------------------------------------- | --------------- |
+| Ctrl-C interrupts foreground  | Signal routing to foreground pgid        | PLAN_04, exec   |
+| Ctrl-Z stops foreground       | Signal routing + tty handoff             | PLAN_04, exec   |
+| Background jobs progress      | `SIGCHLD` handler + `waitpid(WNOHANG)`   | exec::job       |
+| Hung child does not freeze UI | `pselect` multiplex of tty + SIGCHLD     | binary + exec   |
+| Builtin cancellation          | `AtomicBool` in `Tier2Ctx`               | core API        |
+| Timeouts                      | `setitimer` + `SIGALRM`                  | exec            |
+| Pipeline stuck producer       | `poll`-driven fd loop                    | exec::pipeline  |
+| `git fetch` hangs prompt      | Prompt async segment + tokio (in binary) | PLAN_08, binary |
+
+Nothing in this list requires an async runtime. The shell stays
+responsive because POSIX signals and `pselect`/`poll` exist and are
+the right tools for this job.
 
 ## 7. Error strategy
 
