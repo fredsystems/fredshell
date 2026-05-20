@@ -52,6 +52,11 @@ Two foundational decisions shape everything else and are recorded as ADRs:
   encoder-focused `fredshell-ansi` crate rather than sharing freminal's decode-
   oriented escape-sequence types. Convergence is acknowledged as a future option.
   See `Documents/decisions/0002-ansi-encoding-crate-strategy.md`.
+- **ADR 0003 — Test-first compatibility methodology.** Compatibility is
+  defined by an executable spec corpus, not prose. The harness lands before
+  the implementation and runs in CI from day one. Planning splits into
+  Phase A (corpus-independent docs) and Phase B (corpus-dependent docs).
+  See `Documents/decisions/0003-test-first-compatibility-methodology.md`.
 
 ## Planning documents
 
@@ -99,6 +104,7 @@ The rationale and methodology are pinned in ADR 0003.
 | ---- | ----------------------------------------------- | -------- |
 | 0001 | In-process execution and the builtin tier model | accepted |
 | 0002 | ANSI encoding crate strategy                    | accepted |
+| 0003 | Test-first compatibility methodology            | accepted |
 
 New ADRs are added as significant design questions are resolved. ADRs are
 immutable once accepted; superseding decisions get new ADRs that link back.
