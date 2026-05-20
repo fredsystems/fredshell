@@ -106,20 +106,23 @@ pub struct TerminalSession {
     cancel: Arc<AtomicBool>,
 
     /// Self-pipe read end, multiplexed alongside the tty in
-    /// [`TerminalSession::wait`]. Populated by `PLAN_04` 04.4.
-    #[allow(dead_code)] // wired up in 04.4
+    /// [`TerminalSession::wait`].
     sig_rx: Option<OwnedFd>,
 }
 
 impl TerminalSession {
     /// Open a new session.
     ///
-    /// Today this performs only the first step of the full `open`
-    /// sequence: acquire `/dev/tty`. Signal-handler installation,
-    /// capability probing, and initial winsize read land in later
-    /// subtasks (04.4, 04.7, 04.9). The returned session is
-    /// therefore safe to construct but its capability and winsize
-    /// fields hold conservative defaults.
+    /// Today this performs the first two steps of the full `open`
+    /// sequence: acquire `/dev/tty` and install signal handlers
+    /// (including the self-pipe). Capability probing and the initial
+    /// winsize read land in later subtasks (04.7, 04.9). The
+    /// returned session is therefore safe to construct but its
+    /// capability and winsize fields hold conservative defaults.
+    ///
+    /// Signal-handler installation is a process-wide, exactly-once
+    /// side effect. A second [`TerminalSession::open`] call in the
+    /// same process returns [`OpenError::AlreadyOpen`].
     ///
     /// # Errors
     ///
@@ -128,16 +131,18 @@ impl TerminalSession {
     /// terminal (typical in daemon and CI contexts). Returns
     /// [`OpenError::OpenTty`] if the open fails for any other
     /// reason. Returns [`OpenError::SignalSetup`] if signal-handler
-    /// installation fails (reserved for 04.4).
+    /// installation fails.
     pub fn open() -> Result<Self, OpenError> {
         let tty = controlling::open_controlling_tty().map_err(OpenError::from)?;
+        let cancel = Arc::new(AtomicBool::new(false));
+        let handlers = signal::install(&cancel).map_err(OpenError::from)?;
         Ok(Self {
             tty: Some(tty),
             raw_guard: None,
             winsize: WindowSize::default(),
             caps: Capabilities::default(),
-            cancel: Arc::new(AtomicBool::new(false)),
-            sig_rx: None,
+            cancel,
+            sig_rx: Some(handlers.into_reader()),
         })
     }
 
@@ -214,6 +219,19 @@ impl TerminalSession {
     pub fn wait(&self, _deadline: Option<Duration>) -> WaitEvent {
         WaitEvent::Timeout
     }
+
+    /// Borrowed reference to the self-pipe read end installed during
+    /// [`TerminalSession::open`].
+    ///
+    /// `None` when the session was constructed without signal
+    /// handling (currently impossible — kept as an option to avoid
+    /// breaking the API when 04.6 lands a non-signal test path).
+    /// [`TerminalSession::wait`] uses this in 04.6 to register the
+    /// fd with `pselect`.
+    #[must_use]
+    pub const fn signal_fd(&self) -> Option<&OwnedFd> {
+        self.sig_rx.as_ref()
+    }
 }
 
 /// Errors returned by [`TerminalSession::open`].
@@ -226,8 +244,8 @@ pub enum OpenError {
     /// `/dev/tty` exists but could not be opened (permission denied,
     /// I/O error, etc.).
     OpenTty(io::Error),
-    /// `sigaction` failed while installing signal handlers.
-    SignalSetup(io::Error),
+    /// Signal-handler installation failed.
+    SignalSetup(signal::InstallError),
     /// [`TerminalSession::open`] was called when a session was
     /// already open. Sessions are exactly-once.
     AlreadyOpen,
@@ -247,7 +265,8 @@ impl fmt::Display for OpenError {
 impl std::error::Error for OpenError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
-            Self::OpenTty(e) | Self::SignalSetup(e) => Some(e),
+            Self::OpenTty(e) => Some(e),
+            Self::SignalSetup(e) => Some(e),
             Self::NoControllingTerminal | Self::AlreadyOpen => None,
         }
     }
@@ -258,6 +277,19 @@ impl From<controlling::AcquireError> for OpenError {
         match value {
             controlling::AcquireError::NoControllingTerminal => Self::NoControllingTerminal,
             controlling::AcquireError::Open(e) => Self::OpenTty(e),
+        }
+    }
+}
+
+impl From<signal::InstallError> for OpenError {
+    fn from(value: signal::InstallError) -> Self {
+        // Map AlreadyInstalled to AlreadyOpen so callers see a
+        // single "session already exists" surface regardless of
+        // which exactly-once resource caught the duplicate.
+        if matches!(value, signal::InstallError::AlreadyInstalled) {
+            Self::AlreadyOpen
+        } else {
+            Self::SignalSetup(value)
         }
     }
 }
@@ -394,10 +426,13 @@ mod tests {
 
     #[test]
     fn open_returns_session_or_no_controlling_terminal() {
-        // Post-04.2: open() acquires /dev/tty. In interactive dev
-        // shells it succeeds; in CI / nextest harnesses without a
-        // controlling terminal it returns NoControllingTerminal.
-        // Other OpenError variants would indicate a real bug.
+        // Post-04.4: open() also installs signal handlers, which is
+        // a process-wide exactly-once operation. In a cargo test
+        // binary, the *first* test that calls open() will install
+        // them; any later call returns AlreadyOpen. We tolerate any
+        // of: success (interactive dev shell, first call),
+        // NoControllingTerminal (CI / nextest), or AlreadyOpen
+        // (subsequent calls within the same test process).
         match TerminalSession::open() {
             Ok(session) => {
                 // Defaults are the conservative startup state until
@@ -405,8 +440,8 @@ mod tests {
                 assert_eq!(session.window_size().cols, 80);
                 assert_eq!(session.window_size().rows, 24);
             }
-            Err(OpenError::NoControllingTerminal) => {
-                // Expected in CI.
+            Err(OpenError::NoControllingTerminal | OpenError::AlreadyOpen) => {
+                // Expected in CI / when a sibling test already opened.
             }
             Err(other) => panic!("unexpected OpenError variant: {other:?}"),
         }
@@ -437,6 +472,20 @@ mod tests {
         fn assert_error<E: std::error::Error>() {}
         assert_error::<OpenError>();
         assert_error::<RawModeError>();
+    }
+
+    #[test]
+    fn open_session_exposes_signal_fd() {
+        // If a session is successfully opened, the self-pipe read
+        // end must be available. We tolerate NoControllingTerminal
+        // and AlreadyOpen (see above).
+        match TerminalSession::open() {
+            Ok(session) => {
+                assert!(session.signal_fd().is_some());
+            }
+            Err(OpenError::NoControllingTerminal | OpenError::AlreadyOpen) => {}
+            Err(other) => panic!("unexpected OpenError variant: {other:?}"),
+        }
     }
 
     #[test]
