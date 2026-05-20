@@ -1,6 +1,7 @@
 # fredshell — Master Plan
 
-> Last updated: 2026-05-20 — initial draft.
+> Last updated: 2026-05-20 — renumbered: `fredshell-ansi` design promoted to
+> PLAN_03, terminal-I/O policy promoted to PLAN_04; subsequent docs shifted.
 
 This is the top-level index of fredshell's planning documents. Read this first.
 The actual design lives in the per-area `PLAN_XX_*.md` documents and the ADRs in
@@ -53,20 +54,21 @@ Two foundational decisions shape everything else and are recorded as ADRs:
 
 ## Planning documents
 
-| #   | Document                               | Status        | Summary                                                                           |
-| --- | -------------------------------------- | ------------- | --------------------------------------------------------------------------------- |
-| 01  | `Documents/PLAN_01_philosophy.md`      | draft pending | Goals, non-goals, target user, success criteria.                                  |
-| 02  | `Documents/PLAN_02_architecture.md`    | draft pending | Crate layout, module boundaries, key traits, dependency direction.                |
-| 03  | `Documents/PLAN_03_bash_compat.md`     | draft pending | Native parser strategy, brush-parser evaluation, POSIX scope, phasing.            |
-| 04  | `Documents/PLAN_04_interactive_ux.md`  | draft pending | Line editor, history, completion, fuzzy search, keybindings, syntax highlighting. |
-| 05  | `Documents/PLAN_05_prompt.md`          | draft pending | Starship-style prompt renderer, configuration model, performance budget.          |
-| 06  | `Documents/PLAN_06_builtins.md`        | draft pending | Builtin inventory by tier, dispatch model, parity targets, override semantics.    |
-| 07  | `Documents/PLAN_07_config.md`          | draft pending | Config file format, layering, env vars, rc-file semantics.                        |
-| 08  | `Documents/PLAN_08_nix_integration.md` | draft pending | Home-manager module surface, flake outputs, default-shell story.                  |
-| 09  | `Documents/PLAN_09_ai_features.md`     | draft pending | NL→command, error explanation, provider abstraction, privacy boundaries.          |
-| 10  | `Documents/PLAN_10_testing.md`         | draft pending | Unit/integration/PTY/bash-diff harnesses, coverage strategy.                      |
-| 11  | `Documents/PLAN_11_milestones.md`      | draft pending | Phased roadmap: MVP → daily-driver → bash-replacement.                            |
-| 12  | `Documents/PLAN_12_terminal_io.md`     | draft pending | Terminal feature detection, raw mode, signal handling, escape-sequence emission.  |
+| #   | Document                               | Status        | Summary                                                                                               |
+| --- | -------------------------------------- | ------------- | ----------------------------------------------------------------------------------------------------- |
+| 01  | `Documents/PLAN_01_philosophy.md`      | draft pending | Goals, non-goals, target user, success criteria.                                                      |
+| 02  | `Documents/PLAN_02_architecture.md`    | draft pending | Crate layout, module boundaries, key traits, dependency direction.                                    |
+| 03  | `Documents/PLAN_03_ansi.md`            | draft pending | `fredshell-ansi` crate: encoder API, minimal decoder, `Write`-based contract, allocation budget.      |
+| 04  | `Documents/PLAN_04_terminal_io.md`     | draft pending | Raw mode discipline, signals, process groups, terminal feature detection, kitty keyboard negotiation. |
+| 05  | `Documents/PLAN_05_bash_compat.md`     | draft pending | Native parser strategy, brush-parser evaluation, POSIX scope, phasing.                                |
+| 06  | `Documents/PLAN_06_interactive_ux.md`  | draft pending | Line editor, key-byte decoder, history, completion, fuzzy search, keybindings, syntax highlighting.   |
+| 07  | `Documents/PLAN_07_prompt.md`          | draft pending | Starship-style prompt renderer, configuration model, performance budget.                              |
+| 08  | `Documents/PLAN_08_builtins.md`        | draft pending | Builtin inventory by tier, dispatch model, parity targets, override semantics.                        |
+| 09  | `Documents/PLAN_09_config.md`          | draft pending | Config file format, layering, env vars, rc-file semantics.                                            |
+| 10  | `Documents/PLAN_10_nix_integration.md` | draft pending | Home-manager module surface, flake outputs, default-shell story.                                      |
+| 11  | `Documents/PLAN_11_ai_features.md`     | draft pending | NL→command, error explanation, provider abstraction, privacy boundaries.                              |
+| 12  | `Documents/PLAN_12_testing.md`         | draft pending | Unit/integration/PTY/bash-diff harnesses, coverage strategy.                                          |
+| 13  | `Documents/PLAN_13_milestones.md`      | draft pending | Phased roadmap: MVP → daily-driver → bash-replacement.                                                |
 
 ## Architecture Decision Records
 
@@ -94,10 +96,10 @@ These are unresolved as of this draft and will be addressed by the relevant
 planning document or ADR:
 
 - Choice of native bash parser: adopt `brush-parser`, fork, or write our own
-  (deferred to `PLAN_03`).
+  (deferred to `PLAN_05`).
 - Line-editor library: build on `reedline`/`rustyline`, or roll our own on top
-  of `crossterm`/`termwiz` (deferred to `PLAN_04`).
+  of `crossterm`/`termwiz` (deferred to `PLAN_06`).
 - Async runtime: required for AI features and background jobs, optional
-  elsewhere — scope to be decided in `PLAN_02` and `PLAN_09`.
+  elsewhere — scope to be decided in `PLAN_02` and `PLAN_11`.
 - Plugin/extension model: out of scope for v1, but the architecture must not
   preclude it.

@@ -116,7 +116,7 @@ in fredshell because that is the dominant use case here.
 - Crate scope stays small and focused.
 - No cross-repo dependency or version-skew problem.
 - The `Write`-based, allocation-light design is a hard requirement for the
-  line-editor performance budget (see `PLAN_04_interactive_ux.md` once it
+  line-editor performance budget (see `PLAN_06_interactive_ux.md` once it
   exists).
 
 ### Negative
@@ -181,4 +181,4 @@ The current ADR records the deferral, not a permanent fork.
   decoder.
 - `PLAN_02_architecture.md` — where `fredshell-ansi` is registered as a
   workspace crate.
-- `PLAN_12_terminal_io.md` — the consumer of `fredshell-ansi`'s capabilities.
+- `PLAN_04_terminal_io.md` — the consumer of `fredshell-ansi`'s capabilities.
