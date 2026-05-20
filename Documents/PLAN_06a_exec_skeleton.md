@@ -1,0 +1,459 @@
+# PLAN_06a — Execution pipeline skeleton
+
+> Last updated: 2026-05-20 — first draft.
+> Phase: A. Status: draft.
+
+This document specifies the **shape** of the parse-and-execute pipeline
+that PLAN_05 (the spec harness) and the binary REPL call into. It does
+**not** specify real parsing or real execution semantics — those belong
+to PLAN_06b (`Documents/PLAN_06b_exec_semantics.md`, not yet drafted).
+
+The point of splitting PLAN_06 into 06a and 06b is sequencing:
+
+- ADR 0003 requires the spec harness (PLAN_05) to land before any real
+  compatibility work. The harness needs a stable public entry point to
+  call. That entry point is what 06a defines.
+- PLAN_06b is corpus-dependent (Phase B) and cannot start until the
+  harness produces a baseline pass-rate.
+- PLAN_06a is Phase A: it locks the function signatures and the type
+  envelopes, ships a stub implementation that delegates to today's
+  `dispatch_line` (which shells out to `/bin/sh`), and makes the
+  harness and the binary share one code path.
+
+Once PLAN_06a is implemented, the binary's REPL and the spec harness
+both drive the shell through `run_source` / `run_script`. Replacing
+the stub executor in PLAN_06b is then a localized change behind a
+fixed public surface.
+
+## 1. Scope
+
+In scope for PLAN_06a:
+
+- The `parse` function signature and the opaque `Script` AST handle.
+- The `ExecEnv` struct, minimal v0 field set, with `#[non_exhaustive]`.
+- The `run_source` and `run_script` entry points.
+- The `RunResult` and `ExecError` shapes, both `#[non_exhaustive]`.
+- The `Tier2Builtin` trait and `Tier2Ctx` borrow struct (shape only).
+- A stub implementation that satisfies the contract by delegating to
+  the existing `repl::dispatch_line` path.
+- A single Criterion bench covering parse + execute round-trip on a
+  trivial command, to seed §9 budget tracking.
+
+Explicitly out of scope:
+
+- Real parsing (tokenizer, grammar, AST internals, expansion).
+- Real execution (pipelines, redirections, job control, expansion,
+  arithmetic, control flow).
+- Tier-1 builtin implementations beyond what `dispatch_line` already
+  handles.
+- Tier-2 builtin implementations and the dispatch table.
+- `ShellState` internals (variables, functions, aliases, opts, jobs).
+- `setitimer` / `SIGALRM` timeout plumbing.
+- The pipeline `poll` loop.
+
+Out-of-scope items are owned by PLAN_06b unless noted otherwise.
+
+## 2. Public surface
+
+All types and functions live in `fredshell-core` and are re-exported
+from the crate root. The dispatcher in §3 wires them together; the
+binary REPL and the spec harness use only the items below.
+
+### 2.1. `parse`
+
+```rust
+/// Parse a shell-language source string into an opaque `Script`.
+///
+/// Pure function: no I/O, no global state, no environment access.
+/// The returned `Script` is consumed by `run_script`.
+///
+/// v0 implementation: wraps the source as-is. The real parser
+/// (PLAN_06b) replaces the body without changing this signature.
+pub fn parse(source: &str) -> Result<Script, ParseError>;
+
+pub struct Script { /* sealed; opaque to consumers */ }
+
+#[non_exhaustive]
+pub struct ParseError {
+    pub kind: ParseErrorKind,
+    pub message: String,
+}
+
+#[non_exhaustive]
+pub enum ParseErrorKind {
+    /// v0 placeholder. PLAN_06b adds real categorical variants
+    /// (`UnexpectedToken`, `UnterminatedString`, etc.). Anything that
+    /// would fail to parse in v0 (which is nothing — the v0 parser
+    /// accepts everything) maps here.
+    Unsupported,
+}
+```
+
+`Script` deliberately does not expose `Span`, AST nodes, or any
+walker. The harness does not need to walk the AST; the binary does
+not need to walk the AST; PLAN_06b owns the AST internals and is free
+to evolve them without breaking either consumer.
+
+### 2.2. `ExecEnv`
+
+```rust
+/// The environment a script executes in. Constructed by the host
+/// (binary or harness), passed to the executor, owned by the caller.
+///
+/// `#[non_exhaustive]` because PLAN_06b will add fields
+/// (`shell: ShellState`, `builtins: BuiltinRegistry`,
+/// `path_policy`, `signal_policy`, real `stdin`/`stdout`/`stderr`).
+#[non_exhaustive]
+pub struct ExecEnv {
+    /// Working directory. The executor mutates this on `cd`.
+    pub cwd: PathBuf,
+
+    /// Environment variables visible to the script.
+    ///
+    /// v0 uses `String` keyed by `String` for test ergonomics and
+    /// because no real env handling exists yet. PLAN_06b migrates to
+    /// `HashMap<OsString, OsString>` per PLAN_02 §4.2. The migration
+    /// cost is acknowledged: callers that construct `ExecEnv` in
+    /// tests will need to update key/value types. There is no public
+    /// `ExecEnv::env` accessor today; callers use the constructors
+    /// in §2.5.
+    pub(crate) env: HashMap<String, String>,
+}
+```
+
+`stdin`, `stdout`, `stderr`, `shell`, `builtins`, `path_policy`, and
+`signal_policy` are intentionally absent in v0. The stub dispatcher
+inherits the host's stdio via `Command`. The PLAN_06b real executor
+adds them as boxed handles per PLAN_02 §4.2.
+
+### 2.3. `run_source` and `run_script`
+
+```rust
+/// Parse and execute a source string in one call.
+///
+/// Convenience wrapper: `run_source(s, env) == parse(s).and_then(|s|
+/// run_script(&s, env))` with the error types unified. This is the
+/// entry point the spec harness uses.
+pub fn run_source(source: &str, env: &mut ExecEnv) -> Result<RunResult, RunError>;
+
+/// Execute a pre-parsed `Script`. The binary REPL uses this when it
+/// has already parsed the user's input (e.g. to validate before
+/// recording in history).
+pub fn run_script(script: &Script, env: &mut ExecEnv) -> Result<RunResult, RunError>;
+```
+
+`run_source` is the harness's single entry point. The harness does
+not call `parse` and `run_script` separately because parse errors and
+runtime errors both arrive through `RunError`, which the harness
+classifies once.
+
+`run_script` exists for the binary, which may want to parse
+defensively (e.g. to reject obviously malformed input before
+displaying a continuation prompt) and execute later.
+
+### 2.4. `RunResult` and `RunError`
+
+```rust
+#[non_exhaustive]
+pub struct RunResult {
+    /// Final exit status of the script. `0` for success, non-zero
+    /// for failure, per POSIX.
+    pub status: ExitStatus,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ExitStatus(pub i32);
+
+#[non_exhaustive]
+pub enum RunError {
+    /// Parse-time error. Wraps `ParseError`.
+    Parse(ParseError),
+    /// Runtime error. Wraps `ExecError`.
+    Exec(ExecError),
+}
+
+#[non_exhaustive]
+pub enum ExecError {
+    /// A command (builtin or external) was not found.
+    CommandNotFound { name: String },
+    /// The host's I/O streams or process machinery failed.
+    HostIo(io::Error),
+    /// The executor encountered a state it considers a bug. Never
+    /// produced in normal operation; surfaced for tests.
+    InternalInvariant { what: &'static str },
+}
+```
+
+Both error enums are `#[non_exhaustive]` so PLAN_06b can add variants
+(`Redirection`, `ExecFailure`, `Span`-bearing variants, etc.) without
+breaking match exhaustiveness in callers.
+
+The split between `RunResult.status` (non-zero exit) and `RunError`
+(executor itself failed) is binding. The harness treats them as
+different categories: a script that exits 1 is not the same event as
+the executor refusing to run.
+
+### 2.5. Constructors
+
+```rust
+impl ExecEnv {
+    /// Construct an `ExecEnv` from the calling process: cwd from
+    /// `std::env::current_dir`, env from `std::env::vars_os`. Used
+    /// by the binary REPL.
+    ///
+    /// Returns `HostIo` if `current_dir` fails (e.g. the cwd was
+    /// deleted out from under the process).
+    pub fn from_process() -> Result<Self, ExecError>;
+
+    /// Construct an empty `ExecEnv` rooted at the given directory
+    /// with no inherited env vars. Used by the spec harness for
+    /// hermetic tests.
+    pub fn sandboxed(cwd: PathBuf) -> Self;
+}
+```
+
+The harness never calls `from_process`. The binary always calls
+`from_process` (or a thin wrapper). This is the seam that lets the
+harness run hermetically per PLAN_05.
+
+### 2.6. `Tier2Builtin` and `Tier2Ctx`
+
+The trait and context struct ship in v0 to lock the shape PLAN_09
+will consume. No tier-2 builtins are registered in v0; the registry
+type exists but is always empty.
+
+```rust
+pub trait Tier2Builtin: Send + Sync {
+    fn name(&self) -> &'static str;
+    fn aliases(&self) -> &'static [&'static str] { &[] }
+    fn invoke(&self, ctx: Tier2Ctx<'_>) -> Result<ExitStatus, Tier2Error>;
+}
+
+#[non_exhaustive]
+pub struct Tier2Ctx<'a> {
+    pub args: &'a [String],
+    pub cwd: &'a Path,
+    pub env: &'a HashMap<String, String>,
+    pub stdin: &'a mut dyn io::Read,
+    pub stdout: &'a mut dyn io::Write,
+    pub stderr: &'a mut dyn io::Write,
+    pub cancellation: &'a AtomicBool,
+}
+
+#[non_exhaustive]
+pub enum Tier2Error {
+    HostIo(io::Error),
+    InternalInvariant { what: &'static str },
+}
+```
+
+The `String` / `&Path` types are v0; PLAN_06b migrates `args` and
+`env` to `OsString` together with `ExecEnv::env`.
+
+## 3. Internal dispatcher (stub implementation)
+
+```text
+parse(source) ──► Script (wraps source: String)
+                         │
+                         ▼
+run_script(&script, env) ─► dispatch_line(&script.source, env)
+                                          │
+                                          ▼
+                              (today's behavior: tier-1 builtin
+                               lookup → shell out to /bin/sh for
+                               anything else)
+```
+
+The stub:
+
+1. `parse` returns `Ok(Script { source: source.to_owned() })`. The
+   only way it fails is if the source contains a NUL byte, which is
+   `ParseErrorKind::Unsupported`.
+2. `run_script` walks `script.source` line-by-line (split on `\n`,
+   skip blank lines) and calls `dispatch_line` on each.
+3. `dispatch_line` returns `CoreResult<()>`; the stub maps `Ok(())`
+   to `ExitStatus(0)` and `Err` to the appropriate `ExecError`
+   variant. The full exit-status plumbing lands with PLAN_06b.
+
+The stub deliberately does not implement multi-line constructs
+(`if`, `for`, `while`, function definitions, here-documents). Any
+input that would require real parsing executes line-by-line, which
+is wrong for those constructs and right for everything the v0 spec
+corpus exercises. PLAN_05 §3 lists which corpus tests are expected
+to fail against the stub; PLAN_06b makes them pass.
+
+## 4. Crate placement
+
+Per PLAN_02 §11 and the §12 resolution recorded in PLAN_02, the
+parser and executor are internal modules of `fredshell-core`, not
+separate crates. v0 module layout:
+
+```text
+fredshell-core/src/
+  lib.rs               — re-exports: parse, run_source, run_script,
+                         Script, ExecEnv, RunResult, RunError,
+                         ExecError, ExitStatus, Tier2Builtin,
+                         Tier2Ctx, Tier2Error
+  exec/
+    mod.rs             — run_source, run_script, the stub dispatcher
+    env.rs             — ExecEnv, its constructors
+    error.rs           — RunError, ExecError, ExitStatus, RunResult
+    builtin.rs         — Tier2Builtin, Tier2Ctx, Tier2Error
+                         (definitions only; no impls in v0)
+  parser/
+    mod.rs             — parse, Script, ParseError, ParseErrorKind
+                         (stub; PLAN_06b replaces the body)
+  builtins/            — existing module, unchanged
+  repl.rs              — existing dispatch_line, called by exec/mod.rs
+  tty/                 — existing
+```
+
+The existing `builtins/` and `repl::dispatch_line` are unchanged in
+06a. PLAN_06b folds them into the new `exec/` module.
+
+## 5. Wiring the binary REPL
+
+The binary's read-eval loop changes minimally:
+
+```rust
+// Before (current):
+core::repl::dispatch_line(&line)?;
+
+// After (PLAN_06a):
+let mut env = ExecEnv::from_process()?;
+match fredshell_core::run_source(&line, &mut env) {
+    Ok(result) => self.last_status = result.status,
+    Err(err) => self.report_error(err),
+}
+```
+
+`ExecEnv` construction is hoisted out of the per-line loop and reused
+across iterations once `ShellState` lands in PLAN_06b. For v0 it is
+fine to construct per-line; the cost is one `current_dir` syscall and
+one `vars_os` walk, which is well inside the §9 budget.
+
+## 6. Wiring the spec harness
+
+PLAN_05 §5 will document the harness side. The contract from 06a:
+
+- The harness constructs `ExecEnv::sandboxed(tempdir)`.
+- For each spec case, the harness calls `run_source(case.input, &mut env)`.
+- The harness captures `stdout`, `stderr`, and `exit_status` and
+  compares them against the case's expected values.
+- v0: `stdout` / `stderr` are captured by setting `Command::stdout`
+  / `Command::stderr` to pipes inside `dispatch_line`. The stub
+  dispatcher exposes an internal hook the harness uses. PLAN_06b
+  replaces this with real `Box<dyn Write>` plumbing on `ExecEnv`.
+
+The "internal hook" is the one carve-out from the public surface
+that 06a permits, on the grounds that the stub is provisional and
+the harness needs _some_ way to capture output before PLAN_06b
+ships real I/O plumbing. It lives in `exec::testing` behind a
+crate-internal visibility and is removed when PLAN_06b lands real
+stdio on `ExecEnv`.
+
+## 7. Compatibility with PLAN_02
+
+This document is a Phase A refinement of PLAN_02 §4. Where the two
+disagree on v0 details, this document wins for v0 and PLAN_02
+describes the final target:
+
+| Concern              | PLAN_02 (target)                 | PLAN_06a (v0)                     |
+| -------------------- | -------------------------------- | --------------------------------- |
+| Env map type         | `HashMap<OsString, OsString>`    | `HashMap<String, String>`         |
+| `Tier2Ctx::args`     | `&[OsString]`                    | `&[String]`                       |
+| `ExecEnv` stdio      | `Box<dyn Read/Write + Send>`     | absent (inherited via `Command`)  |
+| `ExecEnv::shell`     | `ShellState`                     | absent                            |
+| `ExecEnv::builtins`  | `BuiltinRegistry`                | absent (stub uses fixed dispatch) |
+| `parse` returns      | walkable `Ast`                   | opaque `Script`                   |
+| `ExecError` variants | full categorical set with `Span` | minimal stub set                  |
+
+Every v0 cell migrates to the PLAN_02 cell during PLAN_06b, and
+PLAN_02 §12 records when each migration completes.
+
+## 8. Testing
+
+PLAN_06a ships with:
+
+- Unit tests for `parse` (NUL byte rejection, round-trip).
+- Unit tests for `ExecEnv::sandboxed` and `ExecEnv::from_process`.
+- Unit tests for the stub dispatcher: builtin path (`cd`, `exit`),
+  external path (`echo hi`), command-not-found path.
+- One integration test that exercises `run_source` end-to-end against
+  a temp directory: `cd subdir && pwd` produces the expected stdout
+  and exit 0.
+
+PLAN_05 owns the spec corpus and its harness; PLAN_06a only ensures
+the entry point is callable and behaves consistently.
+
+## 9. Performance
+
+A single Criterion bench seeds the §9 budget tracker in PLAN_02:
+
+```text
+benches/exec_roundtrip.rs
+  parse_only        — parse("true")
+  parse_and_exec    — run_source("true", &mut env)
+```
+
+Budgets are not enforced in 06a; the bench exists so PLAN_06b has a
+baseline. The `parse_only` number should be ~zero (the stub clones a
+short string). The `parse_and_exec` number is bounded by `fork +
+execve + /bin/sh "true"`, which is ~milliseconds on Linux — far
+above what PLAN_06b will achieve, and a useful "before" data point.
+
+## 10. Subtasks
+
+Each subtask is one commit (per `AGENTS.md`). The list is
+prescriptive; deviations require a note in §11.
+
+- **06a.1** Add `exec/error.rs` with `RunResult`, `RunError`,
+  `ExecError`, `ExitStatus`. Tests for the `Display`/`Debug` impls
+  and the `From<ParseError>` / `From<ExecError>` conversions into
+  `RunError`.
+- **06a.2** Add `exec/env.rs` with `ExecEnv`, `from_process`,
+  `sandboxed`. Tests for both constructors, including the
+  `current_dir`-deleted failure path.
+- **06a.3** Add `parser/mod.rs` with stub `parse`, `Script`,
+  `ParseError`, `ParseErrorKind`. Tests for NUL rejection and the
+  round-trip property.
+- **06a.4** Add `exec/builtin.rs` with `Tier2Builtin`, `Tier2Ctx`,
+  `Tier2Error`. No impls. Compile-only test confirming the trait is
+  object-safe.
+- **06a.5** Add `exec/mod.rs` with `run_source`, `run_script`, the
+  stub dispatcher, and the crate-internal output-capture hook.
+  Unit tests per §8.
+- **06a.6** Wire the binary REPL to call `run_source`. Remove the
+  direct `repl::dispatch_line` call from the binary. Integration
+  test that the binary still runs `cd` + `pwd` correctly.
+- **06a.7** Add `benches/exec_roundtrip.rs` per §9.
+- **06a.8** Update `plan.md` to mark PLAN_06a `implemented` and
+  PLAN_02 §12 to reflect which §4 sections are now backed by code
+  (the surface, not the semantics).
+
+Verification suite (`cargo test --all`, `cargo clippy
+--all-targets --all-features -- -D warnings`, `cargo-machete`) runs
+after every subtask.
+
+## 11. Implementation log
+
+To be filled as subtasks complete, one row per subtask, format
+matching PLAN_04 §14.
+
+| Subtask | Commit | Date | Notes |
+| ------- | ------ | ---- | ----- |
+
+## 12. Cleanup registry
+
+To be filled if any subtask surfaces a pre-existing bug per the
+`AGENTS.md` "pre-existing bugs surfaced during a subtask" rule.
+
+| ID  | Surface | Impact | Fix scope | Status |
+| --- | ------- | ------ | --------- | ------ |
+
+## References
+
+- PLAN_02 §4 (public surface target), §12 (implementation status).
+- PLAN_05 (spec harness consumer).
+- PLAN_06b (real executor; not yet drafted).
+- ADR 0003 (test-first compatibility — why 06a exists at all).
