@@ -1,3 +1,8 @@
+// Copyright (C) 2026 Fred Clausen
+// Use of this source code is governed by an MIT-style
+// license that can be found in the LICENSE file or at
+// https://opensource.org/licenses/MIT.
+
 //! Starship-style prompt rendering.
 //!
 //! The eventual goal is starship-config compatibility for a sensible
