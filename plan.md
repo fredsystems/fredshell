@@ -1,6 +1,6 @@
 # fredshell — Master Plan
 
-> Last updated: 2026-05-20 — PLAN_04 (terminal I/O) first draft landed.
+> Last updated: 2026-05-20 — PLAN_07 (interactive UX) first draft landed; commits fredshell to a custom line editor.
 
 This is the top-level index of fredshell's planning documents. Read this first.
 The actual design lives in the per-area `PLAN_XX_*.md` documents and the ADRs in
@@ -66,7 +66,7 @@ Two foundational decisions shape everything else and are recorded as ADRs:
 | 04  | `Documents/PLAN_04_terminal_io.md`     | A     | draft         | Raw mode discipline, signals, process groups, terminal feature detection, kitty keyboard negotiation. |
 | 05  | `Documents/PLAN_05_testing.md`         | A     | draft         | Spec-test harness, corpus methodology, oils-spec integration, real-world script corpus, CI metrics.   |
 | 06  | `Documents/PLAN_06_bash_compat.md`     | B     | stub pending  | Native parser strategy, brush-parser evaluation, POSIX-behavior scope, phasing. Corpus-dependent.     |
-| 07  | `Documents/PLAN_07_interactive_ux.md`  | A     | draft pending | Line editor, key-byte decoder, history, completion, fuzzy search, keybindings, syntax highlighting.   |
+| 07  | `Documents/PLAN_07_interactive_ux.md`  | A     | draft         | Line editor, key-byte decoder, history, completion, fuzzy search, keybindings, syntax highlighting.   |
 | 08  | `Documents/PLAN_08_prompt.md`          | A     | draft pending | Starship-style prompt renderer, configuration model, performance budget.                              |
 | 09  | `Documents/PLAN_09_builtins.md`        | B     | stub pending  | Builtin inventory by tier, dispatch model, parity targets, override semantics. Corpus-dependent.      |
 | 10  | `Documents/PLAN_10_config.md`          | A     | draft pending | Config file format, layering, env vars, rc-file semantics.                                            |
