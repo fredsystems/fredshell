@@ -10,4 +10,5 @@ description = "Core shell primitives for fredshell"
 workspace = true
 
 [dependencies]
+libc.workspace = true
 shell-words.workspace = true

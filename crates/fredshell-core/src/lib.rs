@@ -18,6 +18,7 @@
 pub mod builtins;
 pub mod exec;
 pub mod repl;
+pub mod tty;
 
 use std::fmt;
 use std::io;
