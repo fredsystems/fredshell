@@ -60,7 +60,6 @@ tracing-subscriber = { version = "=0.3.23", features = ["env-filter", "parking_l
 serde = { version = "=1.0.228", features = ["derive"] }
 
 # Shell pieces
-nu-ansi-term = "=0.50.3"
 shell-words = "=1.1.1"
 
 # xtask helpers

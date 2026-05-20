@@ -465,7 +465,8 @@ dependencies = [
 name = "fredshell-prompt"
 version = "0.1.0"
 dependencies = [
- "nu-ansi-term",
+ "criterion",
+ "fredshell-ansi",
  "serde",
 ]
 

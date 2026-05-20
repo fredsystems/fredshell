@@ -10,5 +10,12 @@ description = "Starship-style prompt renderer baked into fredshell"
 workspace = true
 
 [dependencies]
-nu-ansi-term.workspace = true
+fredshell-ansi = { path = "../fredshell-ansi" }
 serde = { workspace = true }
+
+[dev-dependencies]
+criterion = { workspace = true }
+
+[[bench]]
+name = "render"
+harness = false
