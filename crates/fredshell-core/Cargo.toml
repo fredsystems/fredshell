@@ -6,11 +6,9 @@ rust-version.workspace = true
 license.workspace = true
 description = "Core shell primitives for fredshell"
 
+[lints]
+workspace = true
+
 [dependencies]
 anyhow.workspace = true
-libc.workspace = true
-nix.workspace = true
-serde = { workspace = true }
 shell-words.workspace = true
-thiserror.workspace = true
-tracing.workspace = true
