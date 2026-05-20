@@ -188,28 +188,41 @@ impl Handlers {
     /// Returns the underlying `io::Error` from `read(2)` for any
     /// error other than `EINTR`, `EAGAIN`, or `EWOULDBLOCK`.
     pub fn drain<'b>(&self, buf: &'b mut [u8]) -> io::Result<&'b [u8]> {
-        if buf.is_empty() {
-            return Ok(&buf[..0]);
+        drain_pipe(self.reader.as_raw_fd(), buf)
+    }
+}
+
+/// Drain a non-blocking self-pipe-style fd into `buf`.
+///
+/// Used by [`Handlers::drain`] and by
+/// [`super::TerminalSession::wait`] which holds the read end as a
+/// bare [`OwnedFd`] inside [`super::TerminalSession`].
+///
+/// # Errors
+///
+/// Returns the underlying `io::Error` from `read(2)` for any error
+/// other than `EINTR`, `EAGAIN`, or `EWOULDBLOCK`.
+pub fn drain_pipe(fd: RawFd, buf: &mut [u8]) -> io::Result<&[u8]> {
+    if buf.is_empty() {
+        return Ok(&buf[..0]);
+    }
+    loop {
+        // SAFETY: `fd` is owned by the caller; `buf` is a valid
+        // mutable slice; we pass its real length.
+        let n = unsafe { libc::read(fd, buf.as_mut_ptr().cast::<libc::c_void>(), buf.len()) };
+        if n >= 0 {
+            // Truncation cannot happen because n <= buf.len() <= isize::MAX.
+            #[allow(clippy::cast_sign_loss)]
+            let n = n as usize;
+            return Ok(&buf[..n]);
         }
-        let fd = self.reader.as_raw_fd();
-        loop {
-            // SAFETY: `fd` is owned by `self.reader`; `buf` is a
-            // valid mutable slice; we pass its real length.
-            let n = unsafe { libc::read(fd, buf.as_mut_ptr().cast::<libc::c_void>(), buf.len()) };
-            if n >= 0 {
-                // Truncation cannot happen because n <= buf.len() <= isize::MAX.
-                #[allow(clippy::cast_sign_loss)]
-                let n = n as usize;
-                return Ok(&buf[..n]);
-            }
-            let err = io::Error::last_os_error();
-            match err.raw_os_error() {
-                Some(EINTR) => {}
-                // On Linux and macOS EAGAIN == EWOULDBLOCK; both
-                // mean "non-blocking read found no data."
-                Some(EAGAIN) => return Ok(&buf[..0]),
-                _ => return Err(err),
-            }
+        let err = io::Error::last_os_error();
+        match err.raw_os_error() {
+            Some(EINTR) => {}
+            // On Linux and macOS EAGAIN == EWOULDBLOCK; both
+            // mean "non-blocking read found no data."
+            Some(EAGAIN) => return Ok(&buf[..0]),
+            _ => return Err(err),
         }
     }
 }

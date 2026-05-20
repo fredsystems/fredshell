@@ -52,15 +52,19 @@ pub mod termios;
 pub mod wait;
 pub mod winsize;
 
+#[cfg(test)]
+mod test_pty;
+
 use std::fmt;
 use std::io;
-use std::os::fd::OwnedFd;
+use std::os::fd::{AsFd, OwnedFd};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 pub use capabilities::{Capabilities, ColorSupport, Osc8Support};
 pub use signal::Signal;
+pub use wait::{TtyInput, TtyOutput};
 pub use winsize::WindowSize;
 
 /// The single owner of the shell's terminal state.
@@ -213,11 +217,60 @@ impl TerminalSession {
     /// `read -t` pass a finite `Duration` and treat
     /// [`WaitEvent::Timeout`] as the timed-out path.
     ///
-    /// Implementation lands in subtask 04.6.
+    /// When both the tty and the signal pipe report ready in the
+    /// same `pselect` return, signals take priority — the REPL needs
+    /// to observe `SIGINT` and friends before consuming keystrokes
+    /// to honor cancellation. The tty bytes are not lost; the next
+    /// `wait` returns [`WaitEvent::Input`] immediately because the
+    /// fd is still readable.
+    ///
+    /// If `wait` is called on a session that lacks a tty fd or a
+    /// signal-pipe fd (constructed with neither), it returns
+    /// [`WaitEvent::Timeout`] immediately to keep the call total.
+    /// Production sessions opened via [`TerminalSession::open`]
+    /// always have both.
     #[must_use]
-    #[allow(clippy::unused_self, clippy::missing_const_for_fn)] // gains syscalls in 04.6.
-    pub fn wait(&self, _deadline: Option<Duration>) -> WaitEvent {
-        WaitEvent::Timeout
+    pub fn wait(&self, deadline: Option<Duration>) -> WaitEvent {
+        let (Some(tty), Some(sig)) = (self.tty.as_ref(), self.sig_rx.as_ref()) else {
+            return WaitEvent::Timeout;
+        };
+        let Ok(raw) = wait::wait_for_event(tty.as_fd(), sig.as_fd(), deadline) else {
+            // `pselect` errors that are not EINTR (which is handled
+            // inside wait_for_event) are surfaced as Timeout so the
+            // REPL re-enters the loop rather than crashing on a
+            // transient kernel hiccup. A persistent error will keep
+            // recurring and surface through other syscalls.
+            return WaitEvent::Timeout;
+        };
+        match raw {
+            wait::RawWaitEvent::Timeout => WaitEvent::Timeout,
+            wait::RawWaitEvent::TtyReadable => WaitEvent::Input,
+            wait::RawWaitEvent::SignalPipeReadable | wait::RawWaitEvent::BothReadable => {
+                drain_first_signal(sig).map_or(WaitEvent::Input, WaitEvent::Signal)
+            }
+        }
+    }
+
+    /// Borrow the tty for reading.
+    ///
+    /// The returned reader respects the current termios — raw mode
+    /// delivers byte-at-a-time, cooked mode delivers line-at-a-time.
+    /// Returns `None` if the session was constructed without a tty
+    /// fd (currently impossible via [`TerminalSession::open`]).
+    #[must_use]
+    pub fn input(&self) -> Option<TtyInput<'_>> {
+        self.tty.as_ref().map(|fd| TtyInput::new(fd.as_fd()))
+    }
+
+    /// Borrow the tty for writing.
+    ///
+    /// Used by the prompt and line editor; `PLAN_03` sequences are
+    /// written through this handle. Returns `None` if the session
+    /// was constructed without a tty fd (currently impossible via
+    /// [`TerminalSession::open`]).
+    #[must_use]
+    pub fn output(&self) -> Option<TtyOutput<'_>> {
+        self.tty.as_ref().map(|fd| TtyOutput::new(fd.as_fd()))
     }
 
     /// Borrowed reference to the self-pipe read end installed during
@@ -386,6 +439,27 @@ impl Default for CancellationToken {
     fn default() -> Self {
         Self::new()
     }
+}
+
+/// Drain the self-pipe and return the first decodable [`Signal`].
+///
+/// Multiple signals may be coalesced into one wakeup; we read as
+/// many bytes as fit in a small stack buffer and return the first
+/// one [`Signal::from_raw`] recognizes. The remaining bytes are
+/// dropped — coalescing is benign because the REPL re-enters
+/// [`TerminalSession::wait`] after handling each signal anyway, and
+/// the cancellation flag (set by the handler itself, not the drain
+/// path) captures the SIGINT semantics regardless of how many
+/// SIGINTs were collapsed.
+///
+/// Returns `None` if the pipe was empty or contained only
+/// undecodable bytes; the caller falls back to [`WaitEvent::Input`]
+/// in that case.
+fn drain_first_signal(fd: &OwnedFd) -> Option<Signal> {
+    use std::os::fd::AsRawFd;
+    let mut buf = [0u8; 16];
+    let drained = signal::drain_pipe(fd.as_raw_fd(), &mut buf).ok()?;
+    drained.iter().find_map(|b| Signal::from_raw(i32::from(*b)))
 }
 
 #[cfg(test)]
