@@ -72,6 +72,10 @@ struct CsiParse {
     private: bool,
     /// Decimal parameters separated by `;`.
     params: Params,
+    /// Optional intermediate byte in `0x20..=0x2f` (e.g. `$` in
+    /// DECRPM responses, `*` in some VT extensions). `None` if the
+    /// sequence had no intermediate byte.
+    intermediate: Option<u8>,
     /// Final byte (the byte in the `0x40..=0x7e` range that
     /// terminates the CSI).
     final_byte: u8,
@@ -81,9 +85,11 @@ struct CsiParse {
 
 /// Parse a CSI sequence from the front of `input`.
 ///
-/// Recognises the shape `ESC [ [?] (digit | ';')* final` where
-/// `final` is in `0x40..=0x7e`. Does not handle intermediate bytes
-/// (`0x20..=0x2f`) — none of the responses we decode use them.
+/// Recognises the shape `ESC [ [?] (digit | ';')* [intermediate]
+/// final` where `intermediate` is a single byte in `0x20..=0x2f`
+/// (sufficient for the responses we decode: DECRPM uses `$`, DA1 /
+/// DSR / kitty have no intermediate). `final` is in `0x40..=0x7e`.
+#[allow(clippy::too_many_lines)]
 fn parse_csi(input: &[u8]) -> Result<CsiParse, DecodeError> {
     if input.len() < 2 {
         return Err(DecodeError::Incomplete);
@@ -110,6 +116,7 @@ fn parse_csi(input: &[u8]) -> Result<CsiParse, DecodeError> {
     let mut params = Params::new();
     let mut current: u32 = 0;
     let mut have_digit = false;
+    let mut intermediate: Option<u8> = None;
 
     while i < input.len() {
         let b = input[i];
@@ -135,13 +142,42 @@ fn parse_csi(input: &[u8]) -> Result<CsiParse, DecodeError> {
                 have_digit = false;
                 i += 1;
             }
+            0x20..=0x2f => {
+                if intermediate.is_some() {
+                    return Err(DecodeError::Malformed {
+                        at: i,
+                        reason: "multiple intermediate bytes not supported",
+                    });
+                }
+                // Flush any pending parameter before the intermediate.
+                if have_digit {
+                    if (params.len as usize) >= MAX_PARAMS {
+                        return Err(DecodeError::Malformed {
+                            at: i,
+                            reason: "too many CSI parameters",
+                        });
+                    }
+                    let value = u16::try_from(current).unwrap_or(u16::MAX);
+                    params.values[params.len as usize] = value;
+                    params.len += 1;
+                    current = 0;
+                    have_digit = false;
+                }
+                intermediate = Some(b);
+                i += 1;
+            }
             0x40..=0x7e => {
                 // Final byte. Flush any pending parameter (or an
                 // empty trailing slot, e.g. `1;` — but only push
                 // the pending slot if we saw a digit OR there is
                 // already at least one separator, so that `CSI c`
                 // with zero params yields an empty list).
-                if have_digit || params.len > 0 {
+                //
+                // When an intermediate byte was already consumed,
+                // any pending parameter was flushed at that point;
+                // do not push a phantom trailing zero in that case.
+                let should_flush = intermediate.is_none() && (have_digit || params.len > 0);
+                if should_flush {
                     if (params.len as usize) >= MAX_PARAMS {
                         return Err(DecodeError::Malformed {
                             at: i,
@@ -155,6 +191,7 @@ fn parse_csi(input: &[u8]) -> Result<CsiParse, DecodeError> {
                 return Ok(CsiParse {
                     private,
                     params,
+                    intermediate,
                     final_byte: b,
                     consumed: i + 1,
                 });
@@ -206,6 +243,12 @@ impl Decode for Da1Response {
             return Err(DecodeError::Malformed {
                 at: 2,
                 reason: "DA1 response must begin with 'CSI ?'",
+            });
+        }
+        if parsed.intermediate.is_some() {
+            return Err(DecodeError::Malformed {
+                at: parsed.consumed - 2,
+                reason: "DA1 response must not contain an intermediate byte",
             });
         }
         if parsed.final_byte != b'c' {
@@ -263,6 +306,12 @@ impl Decode for DsrCursorPosition {
                 reason: "DSR cursor position must not be a private CSI",
             });
         }
+        if parsed.intermediate.is_some() {
+            return Err(DecodeError::Malformed {
+                at: parsed.consumed - 2,
+                reason: "DSR cursor position must not contain an intermediate byte",
+            });
+        }
         if parsed.final_byte != b'R' {
             return Err(DecodeError::Malformed {
                 at: parsed.consumed - 1,
@@ -309,6 +358,12 @@ impl Decode for KittyKeyboardQueryResponse {
                 reason: "kitty keyboard response must begin with 'CSI ?'",
             });
         }
+        if parsed.intermediate.is_some() {
+            return Err(DecodeError::Malformed {
+                at: parsed.consumed - 2,
+                reason: "kitty keyboard response must not contain an intermediate byte",
+            });
+        }
         if parsed.final_byte != b'u' {
             return Err(DecodeError::Malformed {
                 at: parsed.consumed - 1,
@@ -329,6 +384,123 @@ impl Decode for KittyKeyboardQueryResponse {
         Ok((
             Self {
                 flags: KittyKeyboardFlags::from_bits(bits),
+            },
+            parsed.consumed,
+        ))
+    }
+}
+
+// ---------------------------------------------------------------------------
+// DECRPM — Mode report response (DECRQM reply)
+// ---------------------------------------------------------------------------
+
+/// DECRPM mode-report response: the terminal's reply to a DECRQM
+/// query.
+///
+/// Wire form: `CSI ? <mode> ; <value> $ y`. `mode` echoes the
+/// requested DEC private mode (e.g. `2026` for synchronized output)
+/// and `value` reports the mode's current state.
+///
+/// The most common queries fredshell issues are for mode 2026
+/// (synchronized output) and mode 2027 (in-band resize notifications).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DecrpmResponse {
+    /// DEC private mode number being reported (e.g. `2026`).
+    pub mode: u16,
+    /// Mode state reported by the terminal.
+    pub state: DecrpmState,
+}
+
+/// Possible values reported by a DECRPM response.
+///
+/// Per the VT specification:
+/// - `0` — mode is not recognized.
+/// - `1` — mode is set (enabled).
+/// - `2` — mode is reset (disabled / supported but off).
+/// - `3` — mode is permanently set.
+/// - `4` — mode is permanently reset.
+///
+/// For capability detection, **any value other than [`NotRecognized`]
+/// indicates the terminal supports the mode**; only the `0` reply
+/// means "I do not know about this mode."
+///
+/// [`NotRecognized`]: DecrpmState::NotRecognized
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum DecrpmState {
+    /// `0` — mode is not recognized by the terminal.
+    NotRecognized,
+    /// `1` — mode is set.
+    Set,
+    /// `2` — mode is reset (supported but currently off).
+    Reset,
+    /// `3` — mode is permanently set (cannot be disabled).
+    PermanentlySet,
+    /// `4` — mode is permanently reset (cannot be enabled).
+    PermanentlyReset,
+    /// Any other value the terminal returned. Per the VT spec this
+    /// is reserved, but we preserve it so callers can match on it
+    /// explicitly rather than collapsing it into one of the standard
+    /// values.
+    Other(u16),
+}
+
+impl DecrpmState {
+    /// `true` if the terminal recognizes the mode (any state other
+    /// than [`Self::NotRecognized`]).
+    ///
+    /// This is the predicate capability detection uses: we don't
+    /// care whether mode 2026 is currently on or off, we care
+    /// whether the terminal knows about it.
+    #[must_use]
+    pub const fn is_supported(self) -> bool {
+        !matches!(self, Self::NotRecognized)
+    }
+
+    const fn from_value(value: u16) -> Self {
+        match value {
+            0 => Self::NotRecognized,
+            1 => Self::Set,
+            2 => Self::Reset,
+            3 => Self::PermanentlySet,
+            4 => Self::PermanentlyReset,
+            other => Self::Other(other),
+        }
+    }
+}
+
+impl Decode for DecrpmResponse {
+    fn decode(input: &[u8]) -> Result<(Self, usize), DecodeError> {
+        let parsed = parse_csi(input)?;
+        if !parsed.private {
+            return Err(DecodeError::Malformed {
+                at: 2,
+                reason: "DECRPM response must begin with 'CSI ?'",
+            });
+        }
+        if parsed.intermediate != Some(b'$') {
+            return Err(DecodeError::Malformed {
+                at: parsed.consumed - 2,
+                reason: "DECRPM response must contain the '$' intermediate byte",
+            });
+        }
+        if parsed.final_byte != b'y' {
+            return Err(DecodeError::Malformed {
+                at: parsed.consumed - 1,
+                reason: "DECRPM response must end with 'y'",
+            });
+        }
+        let params = parsed.params.as_slice();
+        if params.len() != 2 {
+            return Err(DecodeError::Malformed {
+                at: parsed.consumed - 1,
+                reason: "DECRPM response requires exactly two parameters",
+            });
+        }
+        Ok((
+            Self {
+                mode: params[0],
+                state: DecrpmState::from_value(params[1]),
             },
             parsed.consumed,
         ))
@@ -648,6 +820,126 @@ mod tests {
         assert!(matches!(
             KittyKeyboardQueryResponse::decode(b"\x1b[?256u"),
             Err(DecodeError::Malformed { .. }),
+        ));
+    }
+
+    // ---- DECRPM (mode report) --------------------------------------------
+
+    #[test]
+    fn decrpm_synchronized_output_supported_set() {
+        let input = b"\x1b[?2026;1$y";
+        let (r, n) = DecrpmResponse::decode(input).unwrap();
+        assert_eq!(n, input.len());
+        assert_eq!(r.mode, 2026);
+        assert_eq!(r.state, DecrpmState::Set);
+        assert!(r.state.is_supported());
+    }
+
+    #[test]
+    fn decrpm_synchronized_output_supported_reset() {
+        let input = b"\x1b[?2026;2$y";
+        let (r, n) = DecrpmResponse::decode(input).unwrap();
+        assert_eq!(n, input.len());
+        assert_eq!(r.state, DecrpmState::Reset);
+        assert!(r.state.is_supported());
+    }
+
+    #[test]
+    fn decrpm_mode_not_recognized() {
+        let input = b"\x1b[?2026;0$y";
+        let (r, _) = DecrpmResponse::decode(input).unwrap();
+        assert_eq!(r.state, DecrpmState::NotRecognized);
+        assert!(!r.state.is_supported());
+    }
+
+    #[test]
+    fn decrpm_permanently_set_and_reset() {
+        let (set, _) = DecrpmResponse::decode(b"\x1b[?2026;3$y").unwrap();
+        assert_eq!(set.state, DecrpmState::PermanentlySet);
+        assert!(set.state.is_supported());
+
+        let (reset, _) = DecrpmResponse::decode(b"\x1b[?2026;4$y").unwrap();
+        assert_eq!(reset.state, DecrpmState::PermanentlyReset);
+        assert!(reset.state.is_supported());
+    }
+
+    #[test]
+    fn decrpm_preserves_unknown_state_value() {
+        let input = b"\x1b[?2026;7$y";
+        let (r, _) = DecrpmResponse::decode(input).unwrap();
+        assert_eq!(r.state, DecrpmState::Other(7));
+        // Other(_) is still "supported": the terminal recognized the
+        // mode and reported *something*, just not a standard value.
+        assert!(r.state.is_supported());
+    }
+
+    #[test]
+    fn decrpm_rejects_non_private_csi() {
+        let input = b"\x1b[2026;1$y";
+        assert!(matches!(
+            DecrpmResponse::decode(input),
+            Err(DecodeError::Malformed { .. })
+        ));
+    }
+
+    #[test]
+    fn decrpm_rejects_missing_intermediate() {
+        // Wrong final byte (`y` without `$`) — the parser will see
+        // `y` as the final and report two-parameter shape, but the
+        // intermediate check rejects it.
+        let input = b"\x1b[?2026;1y";
+        assert!(matches!(
+            DecrpmResponse::decode(input),
+            Err(DecodeError::Malformed { .. })
+        ));
+    }
+
+    #[test]
+    fn decrpm_rejects_wrong_final() {
+        let input = b"\x1b[?2026;1$x";
+        assert!(matches!(
+            DecrpmResponse::decode(input),
+            Err(DecodeError::Malformed { .. })
+        ));
+    }
+
+    #[test]
+    fn decrpm_rejects_wrong_param_count() {
+        let input = b"\x1b[?2026$y";
+        assert!(matches!(
+            DecrpmResponse::decode(input),
+            Err(DecodeError::Malformed { .. })
+        ));
+    }
+
+    #[test]
+    fn decrpm_incomplete() {
+        // Has the `$` intermediate but truncated before the final.
+        let input = b"\x1b[?2026;1$";
+        assert!(matches!(
+            DecrpmResponse::decode(input),
+            Err(DecodeError::Incomplete)
+        ));
+    }
+
+    #[test]
+    fn decrpm_does_not_swallow_following_bytes() {
+        let mut buf = Vec::new();
+        buf.extend_from_slice(b"\x1b[?2026;1$y");
+        buf.extend_from_slice(b"junk");
+        let (_, n) = DecrpmResponse::decode(&buf).unwrap();
+        assert_eq!(n, 11);
+        assert_eq!(&buf[n..], b"junk");
+    }
+
+    #[test]
+    fn da1_still_rejects_unexpected_intermediate() {
+        // Sanity: adding intermediate-byte support to parse_csi must
+        // not let DA1 accept a sequence with one.
+        let input = b"\x1b[?64;1$c";
+        assert!(matches!(
+            Da1Response::decode(input),
+            Err(DecodeError::Malformed { .. })
         ));
     }
 
