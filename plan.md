@@ -1,8 +1,6 @@
 # fredshell — Master Plan
 
-> Last updated: 2026-05-20 — testing & spec corpus promoted to PLAN_05;
-> two-phase planning model introduced (Phase A: architecture-shaped docs;
-> Phase B: corpus-shaped docs).
+> Last updated: 2026-05-20 — PLAN_05 (testing) first draft landed.
 
 This is the top-level index of fredshell's planning documents. Read this first.
 The actual design lives in the per-area `PLAN_XX_*.md` documents and the ADRs in
@@ -66,7 +64,7 @@ Two foundational decisions shape everything else and are recorded as ADRs:
 | 02  | `Documents/PLAN_02_architecture.md`    | A     | draft pending | Crate layout, module boundaries, key traits, dependency direction.                                    |
 | 03  | `Documents/PLAN_03_ansi.md`            | A     | draft pending | `fredshell-ansi` crate: encoder API, minimal decoder, `Write`-based contract, allocation budget.      |
 | 04  | `Documents/PLAN_04_terminal_io.md`     | A     | draft pending | Raw mode discipline, signals, process groups, terminal feature detection, kitty keyboard negotiation. |
-| 05  | `Documents/PLAN_05_testing.md`         | A     | draft pending | Spec-test harness, corpus methodology, oils-spec integration, real-world script corpus, CI metrics.   |
+| 05  | `Documents/PLAN_05_testing.md`         | A     | draft         | Spec-test harness, corpus methodology, oils-spec integration, real-world script corpus, CI metrics.   |
 | 06  | `Documents/PLAN_06_bash_compat.md`     | B     | stub pending  | Native parser strategy, brush-parser evaluation, POSIX-behavior scope, phasing. Corpus-dependent.     |
 | 07  | `Documents/PLAN_07_interactive_ux.md`  | A     | draft pending | Line editor, key-byte decoder, history, completion, fuzzy search, keybindings, syntax highlighting.   |
 | 08  | `Documents/PLAN_08_prompt.md`          | A     | draft pending | Starship-style prompt renderer, configuration model, performance budget.                              |
