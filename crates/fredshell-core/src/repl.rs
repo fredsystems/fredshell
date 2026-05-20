@@ -83,6 +83,39 @@ fn write_prompt(session: &TerminalSession) {
     }
 }
 
+/// Dispatch one assembled command line through the builtin
+/// registry, falling back to `/bin/sh -c` for non-builtins. Shared
+/// between the raw-mode and cooked-mode loops so feature parity is
+/// guaranteed.
+///
+/// `Some(BuiltinOutcome::Exit(code))` short-circuits the process via
+/// `std::process::exit` exactly like the pre-04.10 cooked loop.
+fn dispatch_line(line: &str) -> CoreResult<()> {
+    let trimmed = line.trim();
+    if trimmed.is_empty() {
+        return Ok(());
+    }
+
+    let argv: Vec<String> = match shell_words::split(trimmed) {
+        Ok(v) => v,
+        Err(e) => {
+            eprintln!("fredshell: parse error: {e}");
+            return Ok(());
+        }
+    };
+
+    match builtins::try_run(&argv)? {
+        Some(BuiltinOutcome::Exit(code)) => std::process::exit(code),
+        Some(BuiltinOutcome::Handled(_)) => {}
+        None => {
+            if let Err(e) = exec::run_via_sh(trimmed) {
+                eprintln!("fredshell: {e}");
+            }
+        }
+    }
+    Ok(())
+}
+
 /// Run the byte-pump loop using the session's tty + signal fds.
 ///
 /// Split out so the same logic can be exercised in tests via
@@ -91,6 +124,7 @@ fn drive_raw_loop_session(
     session: &mut TerminalSession,
     cancel: &crate::tty::CancellationToken,
 ) -> CoreResult<()> {
+    let mut line_buf: Vec<u8> = Vec::with_capacity(128);
     loop {
         match session.wait(None) {
             WaitEvent::Input => {
@@ -99,14 +133,28 @@ fn drive_raw_loop_session(
                     // bail out cleanly.
                     return Ok(());
                 };
-                let outcome =
-                    pump_input_once(input, session.output()).map_err(CoreError::ReplIo)?;
+                let outcome = pump_input_once(input, session.output(), &mut line_buf)
+                    .map_err(CoreError::ReplIo)?;
                 match outcome {
                     InputOutcome::Continue => {}
                     InputOutcome::LineSubmitted => {
+                        // Hand the assembled line to dispatch. Child
+                        // processes need cooked stdin and OPOST-on
+                        // output, so drop raw mode for the duration
+                        // of the command and re-enter afterwards. The
+                        // RawModeGuard drops on leave_raw_mode and is
+                        // re-created on enter_raw_mode; tcsetattr
+                        // costs are negligible at human typing speed.
+                        let line = String::from_utf8_lossy(&line_buf).into_owned();
+                        line_buf.clear();
+                        session.leave_raw_mode();
+                        let dispatch_result = dispatch_line(&line);
+                        session.enter_raw_mode().map_err(CoreError::RawMode)?;
+                        dispatch_result?;
                         write_prompt(session);
                     }
                     InputOutcome::Interrupted => {
+                        line_buf.clear();
                         cancel.reset();
                         write_prompt(session);
                     }
@@ -124,6 +172,7 @@ fn drive_raw_loop_session(
                 // because ISIG is cleared, but kbd-driver shortcuts
                 // or `kill -INT $$` can still raise it). Treat the
                 // same way as the in-band 0x03 byte.
+                line_buf.clear();
                 cancel.reset();
                 if let Some(mut out) = session.output() {
                     let _ = out.write_all(b"^C\r\n");
@@ -165,23 +214,22 @@ enum InputOutcome {
     Eof,
 }
 
-/// Read one batch of bytes from `input` and echo them through
-/// `output`. Handles the small set of control bytes the 04.10 loop
-/// recognises:
+/// Read one batch of bytes from `input`, accumulate printable bytes
+/// into `line_buf`, and echo them through `output`. Handles the
+/// small set of control bytes the 04.10 loop recognises:
 ///
-/// | Byte         | Action                                           |
-/// |--------------|--------------------------------------------------|
-/// | `0x04` Ctrl-D| Returns [`InputOutcome::Eof`] (no echo).         |
-/// | `0x03` Ctrl-C| Echoes `^C\r\n`, returns `Interrupted`.          |
-/// | `\r` (0x0D)  | Echoes `\r\n`, returns `LineSubmitted`.          |
-/// | `\n` (0x0A)  | Echoes `\r\n`, returns `LineSubmitted`.          |
-/// | other        | Echoed verbatim; loop continues.                 |
+/// | Byte             | Action                                                |
+/// |------------------|-------------------------------------------------------|
+/// | `0x04` Ctrl-D    | EOF if `line_buf` is empty; otherwise no-op (no echo).|
+/// | `0x03` Ctrl-C    | Clears `line_buf`, echoes `^C\r\n`, `Interrupted`.    |
+/// | `\r` / `\n`      | Echoes `\r\n`, returns `LineSubmitted`.               |
+/// | `0x7F` / `0x08`  | Erase last byte of `line_buf`; emit `\b \b` if any.   |
+/// | other            | Appended to `line_buf`, echoed verbatim.              |
 ///
-/// Control bytes are checked in scan order — the first one found in
-/// the batch determines the outcome and any later bytes in the same
-/// `read` are discarded. This is a pragmatic compromise for the
-/// 04.10 byte pump; `PLAN_07` replaces it with a real keystroke
-/// decoder + line buffer.
+/// Control bytes are checked in scan order — the first one found
+/// determines the outcome and any later bytes in the same `read` are
+/// discarded. The 04.10 byte pump is intentionally minimal; `PLAN_07`
+/// replaces it with a real keystroke decoder + line editor.
 ///
 /// Note: `cfmakeraw` clears `OPOST`, so the terminal driver does
 /// not translate `\n` into `\r\n` on output. We emit CRLF explicitly
@@ -190,6 +238,7 @@ enum InputOutcome {
 fn pump_input_once(
     mut input: TtyInput<'_>,
     output: Option<TtyOutput<'_>>,
+    line_buf: &mut Vec<u8>,
 ) -> std::io::Result<InputOutcome> {
     let mut buf = [0u8; 64];
     let n = input.read(&mut buf)?;
@@ -197,28 +246,46 @@ fn pump_input_once(
         return Ok(InputOutcome::Eof);
     }
 
-    // Scan for a recognised control byte. The position determines
-    // how many leading bytes we echo before the control action.
-    let mut echo_end = n;
+    // Walk the batch in order. Printable bytes are appended to the
+    // line buffer and queued for echo; control bytes are handled
+    // inline and may terminate the batch early.
+    let mut echo: Vec<u8> = Vec::with_capacity(n);
     let mut outcome = InputOutcome::Continue;
-    for (i, b) in buf[..n].iter().enumerate() {
-        match *b {
+    for &b in &buf[..n] {
+        match b {
             0x04 => {
-                // Ctrl-D: bytes before EOT are discarded (the byte
-                // pump is not a line buffer; see 04.10 commit notes).
-                return Ok(InputOutcome::Eof);
+                // Ctrl-D: EOF only if the line buffer is empty
+                // (matches bash). Otherwise the keystroke is
+                // silently dropped — a real line editor would
+                // forward-delete here; the 04.10 pump does not.
+                if line_buf.is_empty() && echo.is_empty() {
+                    flush_echo(output, &echo)?;
+                    return Ok(InputOutcome::Eof);
+                }
+                break;
             }
             0x03 => {
-                echo_end = i;
+                line_buf.clear();
                 outcome = InputOutcome::Interrupted;
                 break;
             }
             b'\r' | b'\n' => {
-                echo_end = i;
                 outcome = InputOutcome::LineSubmitted;
                 break;
             }
-            _ => {}
+            0x7F | 0x08 => {
+                // Backspace / DEL. Erase last byte of the buffer,
+                // and emit `\b \b` to wipe the on-screen glyph.
+                // If the buffer is empty (or only contains bytes
+                // queued for echo this batch), nothing to erase.
+                if line_buf.pop().is_some() {
+                    echo.extend_from_slice(b"\x08 \x08");
+                }
+            }
+            _ => {
+                line_buf.push(b);
+                echo.push(b);
+            }
         }
     }
 
@@ -226,8 +293,8 @@ fn pump_input_once(
         return Ok(outcome);
     };
 
-    if echo_end > 0 {
-        out.write_all(&buf[..echo_end])?;
+    if !echo.is_empty() {
+        out.write_all(&echo)?;
     }
     match outcome {
         InputOutcome::Interrupted => {
@@ -240,6 +307,20 @@ fn pump_input_once(
     }
     out.flush()?;
     Ok(outcome)
+}
+
+/// Flush a queued echo buffer to `output` if one is provided.
+/// Used by the Ctrl-D branch when we have already collected leading
+/// echoable bytes that should still hit the screen before the loop
+/// exits on EOF.
+fn flush_echo(output: Option<TtyOutput<'_>>, echo: &[u8]) -> std::io::Result<()> {
+    if let Some(mut out) = output
+        && !echo.is_empty()
+    {
+        out.write_all(echo)?;
+        out.flush()?;
+    }
+    Ok(())
 }
 
 /// Cooked-mode fallback loop, used when the process has no
@@ -264,28 +345,7 @@ fn run_cooked(_opts: &Options) -> CoreResult<()> {
             break;
         }
 
-        let trimmed = line.trim();
-        if trimmed.is_empty() {
-            continue;
-        }
-
-        let argv: Vec<String> = match shell_words::split(trimmed) {
-            Ok(v) => v,
-            Err(e) => {
-                eprintln!("fredshell: parse error: {e}");
-                continue;
-            }
-        };
-
-        match builtins::try_run(&argv)? {
-            Some(BuiltinOutcome::Exit(code)) => std::process::exit(code),
-            Some(BuiltinOutcome::Handled(_)) => {}
-            None => {
-                if let Err(e) = exec::run_via_sh(trimmed) {
-                    eprintln!("fredshell: {e}");
-                }
-            }
-        }
+        dispatch_line(&line)?;
     }
 
     Ok(())
@@ -295,19 +355,25 @@ fn run_cooked(_opts: &Options) -> CoreResult<()> {
 /// explicit tty fd and signal fd, without owning a full
 /// [`TerminalSession`].
 ///
-/// Returns when the input fd reports EOF or yields a Ctrl-D byte.
+/// Returns when the input fd reports EOF.
 /// `Continue`, `LineSubmitted`, and `Interrupted` all keep looping.
 #[cfg(test)]
 fn drive_raw_loop(
     tty_fd: std::os::fd::BorrowedFd<'_>,
     _sig_fd: std::os::fd::BorrowedFd<'_>,
 ) -> std::io::Result<()> {
+    let mut line_buf: Vec<u8> = Vec::new();
     loop {
         let input = TtyInput::new(tty_fd);
         let output = TtyOutput::new(tty_fd);
-        match pump_input_once(input, Some(output))? {
+        match pump_input_once(input, Some(output), &mut line_buf)? {
             InputOutcome::Eof => return Ok(()),
-            InputOutcome::Continue | InputOutcome::LineSubmitted | InputOutcome::Interrupted => {}
+            InputOutcome::Continue | InputOutcome::Interrupted => {}
+            InputOutcome::LineSubmitted => {
+                // In the real loop dispatch_line would consume this;
+                // tests just discard.
+                line_buf.clear();
+            }
         }
     }
 }
@@ -341,8 +407,10 @@ mod tests {
 
         let input = TtyInput::new(pty.slave().as_fd());
         let output = TtyOutput::new(pty.slave().as_fd());
-        let outcome = pump_input_once(input, Some(output)).unwrap();
+        let mut line_buf = Vec::new();
+        let outcome = pump_input_once(input, Some(output), &mut line_buf).unwrap();
         assert_eq!(outcome, InputOutcome::Continue);
+        assert_eq!(line_buf, b"hi");
 
         // Read the echoed bytes back from the master.
         let mut master_reader = std::fs::File::from(pty.master().try_clone().unwrap());
@@ -353,7 +421,7 @@ mod tests {
     }
 
     #[test]
-    fn pump_input_once_ctrl_d_returns_eof() {
+    fn pump_input_once_ctrl_d_on_empty_buffer_returns_eof() {
         let Some(pty) = open_pty() else {
             return;
         };
@@ -366,56 +434,63 @@ mod tests {
 
         let input = TtyInput::new(pty.slave().as_fd());
         let output = TtyOutput::new(pty.slave().as_fd());
-        let outcome = pump_input_once(input, Some(output)).unwrap();
+        let mut line_buf = Vec::new();
+        let outcome = pump_input_once(input, Some(output), &mut line_buf).unwrap();
         assert_eq!(outcome, InputOutcome::Eof);
     }
 
     #[test]
-    fn pump_input_once_ctrl_d_in_batch_returns_eof() {
+    fn pump_input_once_ctrl_d_with_pending_buffer_is_dropped() {
+        // bash semantics: Ctrl-D on a non-empty line is silently
+        // ignored (a real line editor would forward-delete; 04.10
+        // drops it). The buffer survives so the user can keep typing.
         let Some(pty) = open_pty() else {
             return;
         };
         {
             let mut master_writer = std::fs::File::from(pty.master().try_clone().unwrap());
-            // "ab" then Ctrl-D in the same batch — EOF wins, bytes
-            // before EOT are intentionally discarded (the 04.10 loop
-            // is a byte-pump, not a line buffer).
             master_writer.write_all(b"ab\x04").unwrap();
             master_writer.flush().unwrap();
         }
 
         let input = TtyInput::new(pty.slave().as_fd());
         let output = TtyOutput::new(pty.slave().as_fd());
-        let outcome = pump_input_once(input, Some(output)).unwrap();
-        assert_eq!(outcome, InputOutcome::Eof);
+        let mut line_buf = Vec::new();
+        let outcome = pump_input_once(input, Some(output), &mut line_buf).unwrap();
+        // Ctrl-D after "ab" terminates the batch but does NOT
+        // return EOF — the buffer is non-empty.
+        assert_ne!(outcome, InputOutcome::Eof);
+        assert_eq!(line_buf, b"ab");
     }
 
     #[test]
-    fn pump_input_once_ctrl_c_returns_interrupted() {
+    fn pump_input_once_ctrl_c_clears_buffer_and_returns_interrupted() {
         let Some(pty) = open_pty() else {
             return;
         };
         {
             let mut master_writer = std::fs::File::from(pty.master().try_clone().unwrap());
-            // 0x03 = ETX = Ctrl-C
-            master_writer.write_all(&[0x03]).unwrap();
+            // "abc" then Ctrl-C: buffer must be cleared.
+            master_writer.write_all(b"abc\x03").unwrap();
             master_writer.flush().unwrap();
         }
 
         let input = TtyInput::new(pty.slave().as_fd());
         let output = TtyOutput::new(pty.slave().as_fd());
-        let outcome = pump_input_once(input, Some(output)).unwrap();
+        let mut line_buf = Vec::new();
+        let outcome = pump_input_once(input, Some(output), &mut line_buf).unwrap();
         assert_eq!(outcome, InputOutcome::Interrupted);
+        assert!(line_buf.is_empty());
 
-        // The pump echoes "^C\r\n" on Ctrl-C.
+        // The pump echoes the leading "abc" then "^C\r\n".
         let mut master_reader = std::fs::File::from(pty.master().try_clone().unwrap());
-        let mut buf = [0u8; 16];
+        let mut buf = [0u8; 32];
         let n = master_reader.read(&mut buf).unwrap();
         assert!(buf[..n].windows(4).any(|w| w == b"^C\r\n"));
     }
 
     #[test]
-    fn pump_input_once_enter_returns_line_submitted() {
+    fn pump_input_once_enter_returns_line_submitted_with_buffered_text() {
         let Some(pty) = open_pty() else {
             return;
         };
@@ -427,8 +502,10 @@ mod tests {
 
         let input = TtyInput::new(pty.slave().as_fd());
         let output = TtyOutput::new(pty.slave().as_fd());
-        let outcome = pump_input_once(input, Some(output)).unwrap();
+        let mut line_buf = Vec::new();
+        let outcome = pump_input_once(input, Some(output), &mut line_buf).unwrap();
         assert_eq!(outcome, InputOutcome::LineSubmitted);
+        assert_eq!(line_buf, b"hi");
 
         // Echoed bytes should include "hi" followed by an explicit
         // CRLF (OPOST is cleared by cfmakeraw).
@@ -436,6 +513,74 @@ mod tests {
         let mut buf = [0u8; 32];
         let n = master_reader.read(&mut buf).unwrap();
         assert!(buf[..n].windows(4).any(|w| w == b"hi\r\n"));
+    }
+
+    #[test]
+    fn pump_input_once_backspace_erases_last_byte() {
+        let Some(pty) = open_pty() else {
+            return;
+        };
+        {
+            let mut master_writer = std::fs::File::from(pty.master().try_clone().unwrap());
+            // "abc" then DEL (0x7F) — buffer should end as "ab".
+            master_writer.write_all(b"abc\x7f").unwrap();
+            master_writer.flush().unwrap();
+        }
+
+        let input = TtyInput::new(pty.slave().as_fd());
+        let output = TtyOutput::new(pty.slave().as_fd());
+        let mut line_buf = Vec::new();
+        let outcome = pump_input_once(input, Some(output), &mut line_buf).unwrap();
+        assert_eq!(outcome, InputOutcome::Continue);
+        assert_eq!(line_buf, b"ab");
+
+        // Echo should contain "abc" followed by `\b \b`.
+        let mut master_reader = std::fs::File::from(pty.master().try_clone().unwrap());
+        let mut buf = [0u8; 32];
+        let n = master_reader.read(&mut buf).unwrap();
+        assert!(buf[..n].windows(3).any(|w| w == b"\x08 \x08"));
+    }
+
+    #[test]
+    fn pump_input_once_backspace_on_empty_buffer_is_noop() {
+        let Some(pty) = open_pty() else {
+            return;
+        };
+        {
+            let mut master_writer = std::fs::File::from(pty.master().try_clone().unwrap());
+            master_writer.write_all(b"\x7f").unwrap();
+            master_writer.flush().unwrap();
+        }
+
+        let input = TtyInput::new(pty.slave().as_fd());
+        let output = TtyOutput::new(pty.slave().as_fd());
+        let mut line_buf = Vec::new();
+        let outcome = pump_input_once(input, Some(output), &mut line_buf).unwrap();
+        assert_eq!(outcome, InputOutcome::Continue);
+        assert!(line_buf.is_empty());
+    }
+
+    #[test]
+    fn pump_input_once_buffer_accumulates_across_calls() {
+        let Some(pty) = open_pty() else {
+            return;
+        };
+        let mut master = std::fs::File::from(pty.master().try_clone().unwrap());
+        let mut line_buf = Vec::new();
+
+        master.write_all(b"foo").unwrap();
+        master.flush().unwrap();
+        let input = TtyInput::new(pty.slave().as_fd());
+        let output = TtyOutput::new(pty.slave().as_fd());
+        let _ = pump_input_once(input, Some(output), &mut line_buf).unwrap();
+        assert_eq!(line_buf, b"foo");
+
+        master.write_all(b"bar").unwrap();
+        master.flush().unwrap();
+        let input = TtyInput::new(pty.slave().as_fd());
+        let output = TtyOutput::new(pty.slave().as_fd());
+        let _ = pump_input_once(input, Some(output), &mut line_buf).unwrap();
+        assert_eq!(line_buf, b"foobar");
     }
 
     #[test]
