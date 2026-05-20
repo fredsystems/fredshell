@@ -1,6 +1,6 @@
 # PLAN_04 — Terminal I/O, Signals, and Capability Detection
 
-> Last updated: 2026-05-20 — first draft.
+> Last updated: 2026-05-20 — added §1 slave-side clarification before implementation.
 > Phase: A. Status: draft.
 > Consumes: PLAN_02 §5, §6.1. Consumed by: PLAN_07 (line editor),
 > PLAN_08 (prompt), PLAN_03 (capability boundary).
@@ -16,6 +16,27 @@ PLAN_04 answers that question, and is the only subsystem that talks
 directly to the kernel about the controlling terminal.
 
 ## 1. Scope and non-scope
+
+### Slave-side, not master-side
+
+fredshell is a shell, not a terminal emulator. The terminal emulator
+(kitty, WezTerm, alacritty, Ghostty, iTerm2, freminal, tmux, sshd, …)
+creates the pseudo-terminal pair and passes the slave side to us
+through fds 0/1/2, having already set it as our controlling terminal
+via `setsid` + `TIOCSCTTY`. **PLAN_04 sits on the slave side.** It
+does **not** create PTYs. The reason it opens `/dev/tty` is to obtain
+a reliable handle to the controlling terminal regardless of what
+fds 0/1/2 actually point at — necessary because any of those may be
+redirected to a file or pipe (`fredshell < script.sh`,
+`ls | fredshell`, etc.) while the shell still needs to talk to the
+user's terminal for prompts, keystrokes, and termios queries. This
+is the standard practice followed by bash, zsh, and fish.
+
+If a future feature ever needs to create a PTY (e.g. a `script`-style
+session recorder, AI-assisted command playback), that capability gets
+its own crate (`fredshell-pty`) introduced by the plan that needs it.
+PLAN_04 does not anticipate this and does not pull in
+`portable-pty`-style master-side machinery.
 
 ### In scope (v1)
 
