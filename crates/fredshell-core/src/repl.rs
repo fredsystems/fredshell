@@ -63,22 +63,24 @@ pub fn run(opts: &Options) -> CoreResult<()> {
 /// Interactive raw-mode loop on top of an open [`TerminalSession`].
 fn run_interactive(mut session: TerminalSession) -> CoreResult<()> {
     session.enter_raw_mode().map_err(CoreError::RawMode)?;
-
-    // Write the initial prompt marker. In a real implementation the
-    // prompt comes from `fredshell-prompt`; for 04.10 we emit a
-    // single-line literal so the user sees fredshell is alive.
-    if let Some(mut out) = session.output() {
-        // Ignore errors here — if writing fails the next wait will
-        // either return Signal::Hup or the read path will surface it.
-        let _ = out.write_all(b"fredshell$ ");
-        let _ = out.flush();
-    }
+    write_prompt(&session);
 
     let cancel = session.cancellation_token();
     drive_raw_loop_session(&mut session, &cancel)?;
 
     session.leave_raw_mode();
     Ok(())
+}
+
+/// Write the 04.10 placeholder prompt to the session's tty. Errors
+/// are deliberately swallowed — if the terminal stops accepting
+/// output the next `wait` will surface a `SIGHUP` and the REPL will
+/// exit cleanly.
+fn write_prompt(session: &TerminalSession) {
+    if let Some(mut out) = session.output() {
+        let _ = out.write_all(b"fredshell$ ");
+        let _ = out.flush();
+    }
 }
 
 /// Run the byte-pump loop using the session's tty + signal fds.
@@ -101,6 +103,13 @@ fn drive_raw_loop_session(
                     pump_input_once(input, session.output()).map_err(CoreError::ReplIo)?;
                 match outcome {
                     InputOutcome::Continue => {}
+                    InputOutcome::LineSubmitted => {
+                        write_prompt(session);
+                    }
+                    InputOutcome::Interrupted => {
+                        cancel.reset();
+                        write_prompt(session);
+                    }
                     InputOutcome::Eof => return Ok(()),
                 }
             }
@@ -111,11 +120,16 @@ fn drive_raw_loop_session(
                 let _ = session.refresh_window_size();
             }
             WaitEvent::Signal(Signal::Int) => {
+                // Ctrl-C delivered as a real SIGINT (rare in raw mode
+                // because ISIG is cleared, but kbd-driver shortcuts
+                // or `kill -INT $$` can still raise it). Treat the
+                // same way as the in-band 0x03 byte.
                 cancel.reset();
                 if let Some(mut out) = session.output() {
-                    let _ = out.write_all(b"\r\n");
+                    let _ = out.write_all(b"^C\r\n");
                     let _ = out.flush();
                 }
+                write_prompt(session);
             }
             WaitEvent::Signal(Signal::Hup | Signal::Term) => {
                 // Controlling terminal hung up or graceful shutdown
@@ -139,13 +153,40 @@ fn drive_raw_loop_session(
 enum InputOutcome {
     /// Bytes were consumed (possibly zero); keep looping.
     Continue,
+    /// User pressed Enter (CR / LF); the byte pump has already
+    /// written CRLF and the caller should re-emit the prompt.
+    LineSubmitted,
+    /// User pressed Ctrl-C (0x03); the byte pump has already
+    /// written `^C\r\n` and the caller should reset cancellation
+    /// and re-emit the prompt.
+    Interrupted,
     /// EOF was reached (Ctrl-D on an empty buffer, or `read(2)`
     /// returned 0). Exit the loop.
     Eof,
 }
 
 /// Read one batch of bytes from `input` and echo them through
-/// `output`. Returns [`InputOutcome::Eof`] on EOF.
+/// `output`. Handles the small set of control bytes the 04.10 loop
+/// recognises:
+///
+/// | Byte         | Action                                           |
+/// |--------------|--------------------------------------------------|
+/// | `0x04` Ctrl-D| Returns [`InputOutcome::Eof`] (no echo).         |
+/// | `0x03` Ctrl-C| Echoes `^C\r\n`, returns `Interrupted`.          |
+/// | `\r` (0x0D)  | Echoes `\r\n`, returns `LineSubmitted`.          |
+/// | `\n` (0x0A)  | Echoes `\r\n`, returns `LineSubmitted`.          |
+/// | other        | Echoed verbatim; loop continues.                 |
+///
+/// Control bytes are checked in scan order — the first one found in
+/// the batch determines the outcome and any later bytes in the same
+/// `read` are discarded. This is a pragmatic compromise for the
+/// 04.10 byte pump; `PLAN_07` replaces it with a real keystroke
+/// decoder + line buffer.
+///
+/// Note: `cfmakeraw` clears `OPOST`, so the terminal driver does
+/// not translate `\n` into `\r\n` on output. We emit CRLF explicitly
+/// for both line-submit and Ctrl-C to keep the cursor in column 0
+/// on the next row.
 fn pump_input_once(
     mut input: TtyInput<'_>,
     output: Option<TtyOutput<'_>>,
@@ -155,16 +196,50 @@ fn pump_input_once(
     if n == 0 {
         return Ok(InputOutcome::Eof);
     }
-    // Ctrl-D (EOT, 0x04) terminates the loop. We check before echo
-    // so the EOT byte is never written back to the terminal.
-    if buf[..n].contains(&0x04) {
-        return Ok(InputOutcome::Eof);
+
+    // Scan for a recognised control byte. The position determines
+    // how many leading bytes we echo before the control action.
+    let mut echo_end = n;
+    let mut outcome = InputOutcome::Continue;
+    for (i, b) in buf[..n].iter().enumerate() {
+        match *b {
+            0x04 => {
+                // Ctrl-D: bytes before EOT are discarded (the byte
+                // pump is not a line buffer; see 04.10 commit notes).
+                return Ok(InputOutcome::Eof);
+            }
+            0x03 => {
+                echo_end = i;
+                outcome = InputOutcome::Interrupted;
+                break;
+            }
+            b'\r' | b'\n' => {
+                echo_end = i;
+                outcome = InputOutcome::LineSubmitted;
+                break;
+            }
+            _ => {}
+        }
     }
-    if let Some(mut out) = output {
-        out.write_all(&buf[..n])?;
-        out.flush()?;
+
+    let Some(mut out) = output else {
+        return Ok(outcome);
+    };
+
+    if echo_end > 0 {
+        out.write_all(&buf[..echo_end])?;
     }
-    Ok(InputOutcome::Continue)
+    match outcome {
+        InputOutcome::Interrupted => {
+            out.write_all(b"^C\r\n")?;
+        }
+        InputOutcome::LineSubmitted => {
+            out.write_all(b"\r\n")?;
+        }
+        InputOutcome::Continue | InputOutcome::Eof => {}
+    }
+    out.flush()?;
+    Ok(outcome)
 }
 
 /// Cooked-mode fallback loop, used when the process has no
@@ -221,20 +296,18 @@ fn run_cooked(_opts: &Options) -> CoreResult<()> {
 /// [`TerminalSession`].
 ///
 /// Returns when the input fd reports EOF or yields a Ctrl-D byte.
+/// `Continue`, `LineSubmitted`, and `Interrupted` all keep looping.
 #[cfg(test)]
 fn drive_raw_loop(
     tty_fd: std::os::fd::BorrowedFd<'_>,
     _sig_fd: std::os::fd::BorrowedFd<'_>,
 ) -> std::io::Result<()> {
-    let input = TtyInput::new(tty_fd);
-    let output = TtyOutput::new(tty_fd);
-    match pump_input_once(input, Some(output))? {
-        InputOutcome::Eof => Ok(()),
-        InputOutcome::Continue => {
-            let input = TtyInput::new(tty_fd);
-            let output = TtyOutput::new(tty_fd);
-            let _ = pump_input_once(input, Some(output))?;
-            Ok(())
+    loop {
+        let input = TtyInput::new(tty_fd);
+        let output = TtyOutput::new(tty_fd);
+        match pump_input_once(input, Some(output))? {
+            InputOutcome::Eof => return Ok(()),
+            InputOutcome::Continue | InputOutcome::LineSubmitted | InputOutcome::Interrupted => {}
         }
     }
 }
@@ -315,6 +388,54 @@ mod tests {
         let output = TtyOutput::new(pty.slave().as_fd());
         let outcome = pump_input_once(input, Some(output)).unwrap();
         assert_eq!(outcome, InputOutcome::Eof);
+    }
+
+    #[test]
+    fn pump_input_once_ctrl_c_returns_interrupted() {
+        let Some(pty) = open_pty() else {
+            return;
+        };
+        {
+            let mut master_writer = std::fs::File::from(pty.master().try_clone().unwrap());
+            // 0x03 = ETX = Ctrl-C
+            master_writer.write_all(&[0x03]).unwrap();
+            master_writer.flush().unwrap();
+        }
+
+        let input = TtyInput::new(pty.slave().as_fd());
+        let output = TtyOutput::new(pty.slave().as_fd());
+        let outcome = pump_input_once(input, Some(output)).unwrap();
+        assert_eq!(outcome, InputOutcome::Interrupted);
+
+        // The pump echoes "^C\r\n" on Ctrl-C.
+        let mut master_reader = std::fs::File::from(pty.master().try_clone().unwrap());
+        let mut buf = [0u8; 16];
+        let n = master_reader.read(&mut buf).unwrap();
+        assert!(buf[..n].windows(4).any(|w| w == b"^C\r\n"));
+    }
+
+    #[test]
+    fn pump_input_once_enter_returns_line_submitted() {
+        let Some(pty) = open_pty() else {
+            return;
+        };
+        {
+            let mut master_writer = std::fs::File::from(pty.master().try_clone().unwrap());
+            master_writer.write_all(b"hi\r").unwrap();
+            master_writer.flush().unwrap();
+        }
+
+        let input = TtyInput::new(pty.slave().as_fd());
+        let output = TtyOutput::new(pty.slave().as_fd());
+        let outcome = pump_input_once(input, Some(output)).unwrap();
+        assert_eq!(outcome, InputOutcome::LineSubmitted);
+
+        // Echoed bytes should include "hi" followed by an explicit
+        // CRLF (OPOST is cleared by cfmakeraw).
+        let mut master_reader = std::fs::File::from(pty.master().try_clone().unwrap());
+        let mut buf = [0u8; 32];
+        let n = master_reader.read(&mut buf).unwrap();
+        assert!(buf[..n].windows(4).any(|w| w == b"hi\r\n"));
     }
 
     #[test]
