@@ -1,6 +1,6 @@
 # fredshell — Master Plan
 
-> Last updated: 2026-05-20 — PLAN_08 (prompt) first draft landed; tokio runtime owned by binary, cell-based output into PLAN_07's frame.
+> Last updated: 2026-05-20 — PLAN_03 (`fredshell-ansi`) implementation complete and merged (task-03/ansi-crate).
 
 This is the top-level index of fredshell's planning documents. Read this first.
 The actual design lives in the per-area `PLAN_XX_*.md` documents and the ADRs in
@@ -62,7 +62,7 @@ Two foundational decisions shape everything else and are recorded as ADRs:
 | --- | -------------------------------------- | ----- | ------------- | ----------------------------------------------------------------------------------------------------- |
 | 01  | `Documents/PLAN_01_philosophy.md`      | A     | draft         | Goals, non-goals, target user, success criteria.                                                      |
 | 02  | `Documents/PLAN_02_architecture.md`    | A     | draft         | Crate layout, module boundaries, key traits, dependency direction.                                    |
-| 03  | `Documents/PLAN_03_ansi.md`            | A     | draft         | `fredshell-ansi` crate: encoder API, minimal decoder, `Write`-based contract, allocation budget.      |
+| 03  | `Documents/PLAN_03_ansi.md`            | A     | implemented   | `fredshell-ansi` crate: encoder API, minimal decoder, `Write`-based contract, allocation budget.      |
 | 04  | `Documents/PLAN_04_terminal_io.md`     | A     | draft         | Raw mode discipline, signals, process groups, terminal feature detection, kitty keyboard negotiation. |
 | 05  | `Documents/PLAN_05_testing.md`         | A     | draft         | Spec-test harness, corpus methodology, oils-spec integration, real-world script corpus, CI metrics.   |
 | 06  | `Documents/PLAN_06_bash_compat.md`     | B     | stub pending  | Native parser strategy, brush-parser evaluation, POSIX-behavior scope, phasing. Corpus-dependent.     |

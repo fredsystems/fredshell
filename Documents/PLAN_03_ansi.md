@@ -1,8 +1,44 @@
 # PLAN_03 — `fredshell-ansi` Crate Design
 
-> Last updated: 2026-05-20 — first draft.
-> Phase: A. Status: draft.
+> Last updated: 2026-05-20 — implementation complete; merged via task-03/ansi-crate (27edd4e).
+> Phase: A. Status: implemented.
 > Operationalizes ADR 0002.
+
+## Implementation status
+
+All v1 scope items in this document landed on `main` via the `task-03/ansi-crate`
+branch. Subtask commits:
+
+| Subtask | Commit  | Summary                                                                              |
+| ------- | ------- | ------------------------------------------------------------------------------------ |
+| 03.1    | 5de39ac | Crate skeleton, `Encode` / `Decode` traits, `AnsiError` types.                       |
+| 03.2    | f756149 | SGR encoder: `Sgr`, `Color`, `Underline`; zero-alloc `encode`.                       |
+| 03.3    | 94148cc | `Cursor` and `Erase` encoders + shared integer-write helpers.                        |
+| 03.4    | 6b3b698 | OSC 7 / 8 / 52 / 133 encoders (percent + base64 streaming).                          |
+| 03.5    | 4db0e4a | DECSET / DECRST `Mode`s + kitty keyboard push / pop / set.                           |
+| 03.6    | 638b54f | Decoders for DA1, DSR cursor position, kitty query, OSC 52 read.                     |
+| 03.7    | 7682160 | `encode_all` / `encoded_len_all` / `EncodeDyn`, `encode_checked`, Criterion benches. |
+| 03.8    | 40f052b | Port `fredshell-prompt` off `nu-ansi-term` to `fredshell-ansi`.                      |
+
+Open questions in §10 that were resolved during implementation:
+
+- **§10 `encoded_len` enforcement.** `encode_checked` shipped in 03.7 as a
+  debug-mode helper that compares the actual written length against
+  `encoded_len()`; the trait contract is verified in tests.
+- **§10 `bitflags` dependency.** Adopted in 03.5 for `KittyKeyboardFlags`.
+- **§10 error type granularity.** Split into encoder-side (`AnsiError`) and
+  decoder-side (`DecodeError`) per §5 of this document.
+- **§10 diff SGR encoder.** Not shipped in v1; revisit when line editor
+  benchmarks exist (PLAN_07).
+- **§7.1 / §10 OSC terminator.** v1 emits `ST` universally as planned; no
+  caller has requested `BEL`.
+- **§10 `Color::Indexed(0..=15)` normalization.** Emits as written.
+
+Carried forward to later plans:
+
+- Capability detection / which sequences are safe to send — PLAN_04.
+- Mouse-event decoding — PLAN_07 (if enabled).
+- Diff SGR encoder evaluation — gated on PLAN_07 line-editor benchmarks.
 
 This document specifies the `fredshell-ansi` crate: its scope, public
 API shape, performance contract, and the small set of structured
