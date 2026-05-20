@@ -146,6 +146,7 @@ impl TerminalSession {
         let tty = controlling::open_controlling_tty().map_err(OpenError::from)?;
         let cancel = Arc::new(AtomicBool::new(false));
         let handlers = signal::install(&cancel).map_err(OpenError::from)?;
+        let sig_rx = handlers.into_reader();
         // Initial window size: best-effort. A failed TIOCGWINSZ
         // (e.g., the fd is not a real tty, which happens in some
         // test environments and inside `sudo -i` setups) falls back
@@ -158,13 +159,17 @@ impl TerminalSession {
         // not fatal — take_foreground() will return an error if
         // called and the field is None.
         let shell_pgrp = Pid::current_pgrp().ok();
+        // Run the capability probe within its 50 ms budget. Failures
+        // degrade silently to env-only inference — see
+        // `probe::run::run` for the contract.
+        let caps = probe::run::run_with_process_env(tty.as_fd(), sig_rx.as_fd());
         Ok(Self {
             tty: Some(tty),
             raw_guard: None,
             winsize,
-            caps: Capabilities::default(),
+            caps,
             cancel,
-            sig_rx: Some(handlers.into_reader()),
+            sig_rx: Some(sig_rx),
             shell_pgrp,
         })
     }
