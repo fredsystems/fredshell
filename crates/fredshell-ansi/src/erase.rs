@@ -34,7 +34,7 @@ pub enum Erase {
 }
 
 impl Encode for Erase {
-    fn encode<W: Write>(&self, w: &mut W) -> io::Result<()> {
+    fn encode<W: Write + ?Sized>(&self, w: &mut W) -> io::Result<()> {
         let bytes: &[u8] = match self {
             Self::InLineToEnd => b"\x1b[0K",
             Self::InLineToStart => b"\x1b[1K",

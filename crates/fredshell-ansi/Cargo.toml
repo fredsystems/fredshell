@@ -12,3 +12,12 @@ workspace = true
 [dependencies]
 
 [dev-dependencies]
+criterion = { workspace = true }
+
+[[bench]]
+name = "encode"
+harness = false
+
+[[bench]]
+name = "decode"
+harness = false

@@ -72,7 +72,7 @@ impl Cursor {
 
 /// Write `CSI <n> <final>` for relative moves. Emits nothing if
 /// `n == 0`.
-fn write_csi_n<W: Write>(w: &mut W, n: u16, final_byte: u8) -> io::Result<()> {
+fn write_csi_n<W: Write + ?Sized>(w: &mut W, n: u16, final_byte: u8) -> io::Result<()> {
     if n == 0 {
         return Ok(());
     }
@@ -87,7 +87,7 @@ const fn csi_n_len(n: u16) -> usize {
 }
 
 impl Encode for Cursor {
-    fn encode<W: Write>(&self, w: &mut W) -> io::Result<()> {
+    fn encode<W: Write + ?Sized>(&self, w: &mut W) -> io::Result<()> {
         match *self {
             Self::Up(n) => write_csi_n(w, n, b'A'),
             Self::Down(n) => write_csi_n(w, n, b'B'),

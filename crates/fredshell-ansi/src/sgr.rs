@@ -276,7 +276,7 @@ impl Color {
         }
     }
 
-    fn write_params<W: Write>(self, w: &mut W, foreground: bool) -> io::Result<()> {
+    fn write_params<W: Write + ?Sized>(self, w: &mut W, foreground: bool) -> io::Result<()> {
         let mut buf = [0_u8; 3];
         match self {
             Self::Black => w.write_all(if foreground { b"30" } else { b"40" }),
@@ -312,7 +312,7 @@ impl Color {
 }
 
 impl Encode for Sgr {
-    fn encode<W: Write>(&self, w: &mut W) -> io::Result<()> {
+    fn encode<W: Write + ?Sized>(&self, w: &mut W) -> io::Result<()> {
         // The reset baseline emits "CSI 0 m" — explicit, single
         // parameter, distinct from "CSI m" (which terminals also
         // accept as a reset but is less greppable in traces).

@@ -76,7 +76,7 @@ pub struct ModeReset {
     pub mode: Mode,
 }
 
-fn write_mode<W: Write>(w: &mut W, n: u16, final_byte: u8) -> io::Result<()> {
+fn write_mode<W: Write + ?Sized>(w: &mut W, n: u16, final_byte: u8) -> io::Result<()> {
     let mut buf = [0_u8; 5];
     w.write_all(b"\x1b[?")?;
     w.write_all(itoa5(n, &mut buf))?;
@@ -89,7 +89,7 @@ const fn mode_len(n: u16) -> usize {
 }
 
 impl Encode for ModeSet {
-    fn encode<W: Write>(&self, w: &mut W) -> io::Result<()> {
+    fn encode<W: Write + ?Sized>(&self, w: &mut W) -> io::Result<()> {
         write_mode(w, self.mode.number(), b'h')
     }
 
@@ -99,7 +99,7 @@ impl Encode for ModeSet {
 }
 
 impl Encode for ModeReset {
-    fn encode<W: Write>(&self, w: &mut W) -> io::Result<()> {
+    fn encode<W: Write + ?Sized>(&self, w: &mut W) -> io::Result<()> {
         write_mode(w, self.mode.number(), b'l')
     }
 

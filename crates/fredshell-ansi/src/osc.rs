@@ -53,7 +53,7 @@ pub struct Osc7<'a> {
 }
 
 impl Encode for Osc7<'_> {
-    fn encode<W: Write>(&self, w: &mut W) -> io::Result<()> {
+    fn encode<W: Write + ?Sized>(&self, w: &mut W) -> io::Result<()> {
         w.write_all(OSC_INTRO)?;
         w.write_all(b"7;file://")?;
         if let Some(h) = self.hostname {
@@ -108,7 +108,7 @@ const fn is_path_safe(b: u8) -> bool {
     matches!(b, b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' | b'/')
 }
 
-fn write_percent_encoded<W: Write>(w: &mut W, bytes: &[u8]) -> io::Result<()> {
+fn write_percent_encoded<W: Write + ?Sized>(w: &mut W, bytes: &[u8]) -> io::Result<()> {
     const HEX: &[u8; 16] = b"0123456789ABCDEF";
     // Buffer runs of safe bytes for fewer write_all calls.
     let mut start = 0;
@@ -166,7 +166,7 @@ pub enum Osc8 {
 }
 
 impl Encode for Osc8 {
-    fn encode<W: Write>(&self, w: &mut W) -> io::Result<()> {
+    fn encode<W: Write + ?Sized>(&self, w: &mut W) -> io::Result<()> {
         w.write_all(OSC_INTRO)?;
         w.write_all(b"8;")?;
         match self {
@@ -215,7 +215,7 @@ pub struct Osc52Set {
 }
 
 impl Encode for Osc52Set {
-    fn encode<W: Write>(&self, w: &mut W) -> io::Result<()> {
+    fn encode<W: Write + ?Sized>(&self, w: &mut W) -> io::Result<()> {
         w.write_all(OSC_INTRO)?;
         w.write_all(b"52;c;")?;
         write_base64(w, &self.payload)?;
@@ -230,7 +230,7 @@ impl Encode for Osc52Set {
 const BASE64_ALPHABET: &[u8; 64] =
     b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
-fn write_base64<W: Write>(w: &mut W, bytes: &[u8]) -> io::Result<()> {
+fn write_base64<W: Write + ?Sized>(w: &mut W, bytes: &[u8]) -> io::Result<()> {
     let mut chunks = bytes.chunks_exact(3);
     let mut buf = [0_u8; 4];
     for chunk in &mut chunks {
@@ -301,7 +301,7 @@ pub enum Osc133 {
 }
 
 impl Encode for Osc133 {
-    fn encode<W: Write>(&self, w: &mut W) -> io::Result<()> {
+    fn encode<W: Write + ?Sized>(&self, w: &mut W) -> io::Result<()> {
         let bytes: &[u8] = match self {
             Self::PromptStart => b"\x1b]133;A\x1b\\",
             Self::CommandStart => b"\x1b]133;B\x1b\\",

@@ -138,7 +138,7 @@ pub struct KittyKeyboardSet {
 pub struct KittyKeyboardQuery;
 
 impl Encode for KittyKeyboardPush {
-    fn encode<W: Write>(&self, w: &mut W) -> io::Result<()> {
+    fn encode<W: Write + ?Sized>(&self, w: &mut W) -> io::Result<()> {
         let mut buf = [0_u8; 3];
         w.write_all(b"\x1b[>")?;
         w.write_all(itoa3(self.flags.bits(), &mut buf))?;
@@ -152,7 +152,7 @@ impl Encode for KittyKeyboardPush {
 }
 
 impl Encode for KittyKeyboardPop {
-    fn encode<W: Write>(&self, w: &mut W) -> io::Result<()> {
+    fn encode<W: Write + ?Sized>(&self, w: &mut W) -> io::Result<()> {
         let mut buf = [0_u8; 5];
         let n = self.count.max(1);
         w.write_all(b"\x1b[<")?;
@@ -167,7 +167,7 @@ impl Encode for KittyKeyboardPop {
 }
 
 impl Encode for KittyKeyboardSet {
-    fn encode<W: Write>(&self, w: &mut W) -> io::Result<()> {
+    fn encode<W: Write + ?Sized>(&self, w: &mut W) -> io::Result<()> {
         let mut buf = [0_u8; 3];
         w.write_all(b"\x1b[=")?;
         w.write_all(itoa3(self.flags.bits(), &mut buf))?;
@@ -183,7 +183,7 @@ impl Encode for KittyKeyboardSet {
 }
 
 impl Encode for KittyKeyboardQuery {
-    fn encode<W: Write>(&self, w: &mut W) -> io::Result<()> {
+    fn encode<W: Write + ?Sized>(&self, w: &mut W) -> io::Result<()> {
         w.write_all(b"\x1b[?u")
     }
 

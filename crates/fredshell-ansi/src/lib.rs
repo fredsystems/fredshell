@@ -78,7 +78,7 @@ pub trait Encode {
     /// Returns any error produced by `w`. Encoders themselves do
     /// not synthesize errors: every byte written is determined by
     /// `self`, and the only failure mode is the underlying writer.
-    fn encode<W: Write>(&self, w: &mut W) -> io::Result<()>;
+    fn encode<W: Write + ?Sized>(&self, w: &mut W) -> io::Result<()>;
 
     /// The exact number of bytes [`Encode::encode`] will write.
     ///
@@ -87,6 +87,143 @@ pub trait Encode {
     /// be bounded (no I/O, no allocation, no looping over data of
     /// unbounded size).
     fn encoded_len(&self) -> usize;
+}
+
+/// Object-safe companion to [`Encode`] for heterogeneous batch
+/// encoding.
+///
+/// `Encode` itself is not object-safe (its `encode` method is
+/// generic over the writer). [`EncodeDyn`] is a thin shim that
+/// takes `&mut dyn Write`, so a slice of `&dyn EncodeDyn` can mix
+/// concrete types — exactly the line-editor redraw case
+/// (`Cursor::Goto` + `Erase::ToEndOfLine` + `Sgr` + …).
+///
+/// A blanket impl covers every [`Encode`] type; callers do not
+/// implement [`EncodeDyn`] directly.
+pub trait EncodeDyn {
+    /// Write the sequence to a type-erased writer.
+    ///
+    /// # Errors
+    ///
+    /// Returns any error produced by `w`.
+    fn encode_dyn(&self, w: &mut dyn Write) -> io::Result<()>;
+
+    /// The exact number of bytes [`Self::encode_dyn`] will write.
+    fn encoded_len_dyn(&self) -> usize;
+}
+
+impl<T: Encode + ?Sized> EncodeDyn for T {
+    fn encode_dyn(&self, w: &mut dyn Write) -> io::Result<()> {
+        self.encode(w)
+    }
+
+    fn encoded_len_dyn(&self) -> usize {
+        self.encoded_len()
+    }
+}
+
+/// Encode every value in `items` to `w`, in order.
+///
+/// Equivalent to calling [`EncodeDyn::encode_dyn`] on each item.
+/// In debug builds this routes each write through a counting writer
+/// and asserts that the bytes written match
+/// [`EncodeDyn::encoded_len_dyn`] (per `PLAN_03` §10).
+///
+/// # Errors
+///
+/// Returns the first writer error encountered. Items already
+/// written before the failure are left in `w`; the caller is
+/// responsible for any cleanup.
+pub fn encode_all<W: Write>(w: &mut W, items: &[&dyn EncodeDyn]) -> io::Result<()> {
+    for item in items {
+        encode_checked(*item, w)?;
+    }
+    Ok(())
+}
+
+/// Sum of [`EncodeDyn::encoded_len_dyn`] across `items`.
+///
+/// Used to pre-size a buffer before [`encode_all`].
+#[must_use]
+pub fn encoded_len_all(items: &[&dyn EncodeDyn]) -> usize {
+    items.iter().map(|i| i.encoded_len_dyn()).sum()
+}
+
+/// Encode `value` to `w`, verifying the [`Encode::encoded_len`]
+/// contract in debug builds.
+///
+/// In `cfg(debug_assertions)` builds this wraps `w` in a counting
+/// writer and asserts that the byte count matches
+/// `value.encoded_len_dyn()`. In release builds it is a direct call
+/// with no overhead.
+///
+/// Encoder authors should funnel through this helper from tests so
+/// the contract is checked, but the hot path may call
+/// [`Encode::encode`] directly when the saved cycle matters.
+///
+/// # Errors
+///
+/// Returns any error produced by `w`.
+///
+/// # Panics
+///
+/// In debug builds, panics if the number of bytes written does not
+/// equal `value.encoded_len_dyn()`. This is a programming error in
+/// the encoder, never a runtime failure of the writer.
+pub fn encode_checked<W: Write>(value: &dyn EncodeDyn, w: &mut W) -> io::Result<()> {
+    #[cfg(debug_assertions)]
+    {
+        let expected = value.encoded_len_dyn();
+        let mut counter = CountingWriter::new(w);
+        value.encode_dyn(&mut counter)?;
+        let written = counter.count();
+        assert!(
+            written == expected,
+            "Encode::encoded_len contract violated: encoded_len() = {expected}, but encode() wrote {written} bytes",
+        );
+        Ok(())
+    }
+    #[cfg(not(debug_assertions))]
+    {
+        value.encode_dyn(w)
+    }
+}
+
+/// `Write` adapter that forwards to an inner writer and counts the
+/// bytes successfully written.
+///
+/// Used by [`encode_checked`] to verify the [`Encode::encoded_len`]
+/// contract. Public so external benches and tests of encoder
+/// implementations can use it; not part of the stable hot path.
+pub struct CountingWriter<'a, W: Write + ?Sized> {
+    inner: &'a mut W,
+    count: usize,
+}
+
+impl<'a, W: Write + ?Sized> CountingWriter<'a, W> {
+    /// Wrap `inner`. The wrapper counts bytes that the inner writer
+    /// reports as written; partial writes are accounted correctly.
+    pub const fn new(inner: &'a mut W) -> Self {
+        Self { inner, count: 0 }
+    }
+
+    /// Total bytes successfully written through this wrapper.
+    #[must_use]
+    pub const fn count(&self) -> usize {
+        self.count
+    }
+}
+
+impl<W: Write + ?Sized> Write for CountingWriter<'_, W> {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        let n = self.inner.write(buf)?;
+        self.count += n;
+        Ok(n)
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        self.inner.flush()
+    }
 }
 
 /// Common contract for the small set of structured terminal
@@ -192,8 +329,16 @@ impl std::fmt::Display for DecodeError {
 impl std::error::Error for DecodeError {}
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
-    use super::{DecodeError, EncodeError};
+    use super::{
+        CountingWriter, DecodeError, Encode, EncodeDyn, EncodeError, encode_all, encode_checked,
+        encoded_len_all,
+    };
+    use crate::cursor::Cursor;
+    use crate::erase::Erase;
+    use crate::sgr::Sgr;
+    use std::io::Write;
 
     #[test]
     fn encode_error_display_invalid_coordinate() {
@@ -223,5 +368,85 @@ mod tests {
         fn assert_error<E: std::error::Error>() {}
         assert_error::<EncodeError>();
         assert_error::<DecodeError>();
+    }
+
+    #[test]
+    fn counting_writer_counts_bytes() {
+        let mut sink = Vec::new();
+        let mut counter = CountingWriter::new(&mut sink);
+        counter.write_all(b"hello").unwrap();
+        counter.write_all(b" world").unwrap();
+        assert_eq!(counter.count(), 11);
+        assert_eq!(sink, b"hello world");
+    }
+
+    #[test]
+    fn encode_dyn_blanket_impl_round_trips() {
+        let sgr = Sgr::RESET;
+        let dyn_ref: &dyn EncodeDyn = &sgr;
+        let mut out = Vec::new();
+        dyn_ref.encode_dyn(&mut out).unwrap();
+        assert_eq!(dyn_ref.encoded_len_dyn(), out.len());
+        assert_eq!(dyn_ref.encoded_len_dyn(), sgr.encoded_len());
+    }
+
+    #[test]
+    fn encode_checked_passes_for_correct_encoder() {
+        let mut out = Vec::new();
+        encode_checked(&Sgr::RESET, &mut out).unwrap();
+        assert_eq!(out, b"\x1b[0m");
+    }
+
+    #[test]
+    fn encode_all_writes_in_order() {
+        // A typical line-editor redraw frame: home cursor, erase to
+        // end of line, set bold, write a literal (caller's job, not
+        // ours), reset.
+        let goto = Cursor::goto(1, 1).unwrap();
+        let erase = Erase::InLineToEnd;
+        let sgr = Sgr::RESET.with_bold();
+        let reset = Sgr::RESET;
+
+        let items: [&dyn EncodeDyn; 4] = [&goto, &erase, &sgr, &reset];
+        let total = encoded_len_all(&items);
+        let mut out = Vec::with_capacity(total);
+        encode_all(&mut out, &items).unwrap();
+        assert_eq!(out.len(), total);
+
+        // Verify byte-for-byte: CSI 1;1H, CSI 0K, CSI 1m, CSI 0m.
+        assert_eq!(&out, b"\x1b[1;1H\x1b[0K\x1b[1m\x1b[0m");
+    }
+
+    #[test]
+    fn encoded_len_all_is_sum() {
+        let items: [&dyn EncodeDyn; 3] = [&Sgr::RESET, &Erase::InLineAll, &Sgr::RESET];
+        let expected = items.iter().map(|i| i.encoded_len_dyn()).sum::<usize>();
+        assert_eq!(encoded_len_all(&items), expected);
+    }
+
+    #[test]
+    fn encoded_len_all_empty_is_zero() {
+        let items: [&dyn EncodeDyn; 0] = [];
+        assert_eq!(encoded_len_all(&items), 0);
+    }
+
+    /// In debug builds, an encoder whose `encoded_len` lies must
+    /// trigger the contract assertion. We construct a deliberately
+    /// broken encoder and verify the panic.
+    #[test]
+    #[cfg(debug_assertions)]
+    #[should_panic(expected = "Encode::encoded_len contract violated")]
+    fn encode_checked_detects_contract_violation() {
+        struct Broken;
+        impl Encode for Broken {
+            fn encode<W: Write + ?Sized>(&self, w: &mut W) -> std::io::Result<()> {
+                w.write_all(b"hello")
+            }
+            fn encoded_len(&self) -> usize {
+                3 // lies — actually writes 5 bytes
+            }
+        }
+        let mut sink = Vec::new();
+        let _ = encode_checked(&Broken, &mut sink);
     }
 }
