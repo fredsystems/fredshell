@@ -37,10 +37,12 @@ fn main() -> Result<()> {
     init_tracing(&cli);
 
     if let Some(cmd) = cli.command.as_deref() {
-        return fredshell_core::run_oneshot(cmd);
+        fredshell_core::run_oneshot(cmd)?;
+        return Ok(());
     }
 
-    fredshell_core::repl::run(fredshell_core::repl::Options { login: cli.login })
+    fredshell_core::repl::run(fredshell_core::repl::Options { login: cli.login })?;
+    Ok(())
 }
 
 fn init_tracing(cli: &Cli) {

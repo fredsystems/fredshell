@@ -6,13 +6,11 @@
 //! Interactive REPL loop.
 //!
 //! Currently a stub: reads lines from stdin, dispatches to builtins or
-//! `/bin/sh -c`. Will be swapped for reedline-driven editing in the
-//! `fredshell` binary crate so this crate stays UI-free for testability.
-
-use anyhow::Result;
+//! `/bin/sh -c`. Will be swapped for a `TerminalSession`-driven loop
+//! once `PLAN_04` lands and `PLAN_07` (line editor) builds on top.
 
 use crate::builtins::{self, BuiltinOutcome};
-use crate::exec;
+use crate::{CoreError, CoreResult, exec};
 
 pub struct Options {
     pub login: bool,
@@ -22,10 +20,10 @@ pub struct Options {
 ///
 /// # Errors
 ///
-/// Returns an error if reading from stdin or writing the prompt to
-/// stdout fails. Builtin and external-command failures are reported
-/// to stderr and do not bubble up.
-pub fn run(_opts: Options) -> Result<()> {
+/// Returns [`CoreError::ReplIo`] if reading from stdin or writing the
+/// prompt to stdout fails. Builtin and external-command failures are
+/// reported to stderr and do not bubble up.
+pub fn run(_opts: Options) -> CoreResult<()> {
     use std::io::{BufRead, Write};
 
     let stdin = std::io::stdin();
@@ -33,11 +31,14 @@ pub fn run(_opts: Options) -> Result<()> {
     let mut line = String::new();
 
     loop {
-        write!(stdout, "fredshell$ ")?;
-        stdout.flush()?;
+        write!(stdout, "fredshell$ ").map_err(CoreError::ReplIo)?;
+        stdout.flush().map_err(CoreError::ReplIo)?;
 
         line.clear();
-        let n = stdin.lock().read_line(&mut line)?;
+        let n = stdin
+            .lock()
+            .read_line(&mut line)
+            .map_err(CoreError::ReplIo)?;
         if n == 0 {
             break;
         }

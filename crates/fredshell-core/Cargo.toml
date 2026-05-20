@@ -10,5 +10,4 @@ description = "Core shell primitives for fredshell"
 workspace = true
 
 [dependencies]
-anyhow.workspace = true
 shell-words.workspace = true

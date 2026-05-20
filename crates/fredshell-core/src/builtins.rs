@@ -8,7 +8,7 @@
 //! Each builtin returns `Some(exit_status)` when it handled the line,
 //! or `None` if the caller should fall through to external execution.
 
-use anyhow::Result;
+use crate::CoreResult;
 
 #[derive(Debug, Clone, Copy)]
 pub enum BuiltinOutcome {
@@ -29,7 +29,7 @@ pub enum BuiltinOutcome {
 /// way that cannot be reported as a non-zero exit. Today no builtin
 /// produces such errors; the signature reserves the slot for future
 /// builtins (e.g. `read`, `wait`).
-pub fn try_run(argv: &[String]) -> Result<Option<BuiltinOutcome>> {
+pub fn try_run(argv: &[String]) -> CoreResult<Option<BuiltinOutcome>> {
     let Some(cmd) = argv.first() else {
         return Ok(None);
     };
