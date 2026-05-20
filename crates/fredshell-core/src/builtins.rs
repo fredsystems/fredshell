@@ -18,6 +18,17 @@ pub enum BuiltinOutcome {
     Exit(i32),
 }
 
+/// Try to dispatch the command line to a builtin.
+///
+/// Returns `Ok(Some(outcome))` if a builtin handled the line, `Ok(None)`
+/// if the caller should fall through to external execution.
+///
+/// # Errors
+///
+/// Returns an error only if a builtin's underlying syscall fails in a
+/// way that cannot be reported as a non-zero exit. Today no builtin
+/// produces such errors; the signature reserves the slot for future
+/// builtins (e.g. `read`, `wait`).
 pub fn try_run(argv: &[String]) -> Result<Option<BuiltinOutcome>> {
     let Some(cmd) = argv.first() else {
         return Ok(None);

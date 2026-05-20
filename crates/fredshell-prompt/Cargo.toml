@@ -6,9 +6,9 @@ rust-version.workspace = true
 license.workspace = true
 description = "Starship-style prompt renderer baked into fredshell"
 
+[lints]
+workspace = true
+
 [dependencies]
-anyhow.workspace = true
-gix.workspace = true
 nu-ansi-term.workspace = true
 serde = { workspace = true }
-tracing.workspace = true

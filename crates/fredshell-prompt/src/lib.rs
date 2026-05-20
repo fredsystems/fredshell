@@ -6,9 +6,9 @@
 //! Starship-style prompt rendering.
 //!
 //! The eventual goal is starship-config compatibility for a sensible
-//! subset of modules (directory, git_branch, git_status, status,
-//! cmd_duration, character). For now we expose a single render entrypoint
-//! returning a string of ANSI escape codes.
+//! subset of modules (`directory`, `git_branch`, `git_status`, `status`,
+//! `cmd_duration`, `character`). For now we expose a single render
+//! entrypoint returning a string of ANSI escape codes.
 
 use serde::{Deserialize, Serialize};
 
@@ -25,14 +25,14 @@ pub struct PromptContext {
     pub last_status: i32,
 }
 
+#[must_use]
 pub fn render(_cfg: &PromptConfig, ctx: &PromptContext) -> String {
     use nu_ansi_term::Color;
 
-    let cwd = ctx
-        .cwd
-        .file_name()
-        .map(|s| s.to_string_lossy().into_owned())
-        .unwrap_or_else(|| ctx.cwd.display().to_string());
+    let cwd = ctx.cwd.file_name().map_or_else(
+        || ctx.cwd.display().to_string(),
+        |s| s.to_string_lossy().into_owned(),
+    );
 
     let arrow = if ctx.last_status == 0 {
         Color::Green.paint("❯")

@@ -13,6 +13,13 @@ use anyhow::{Context, Result};
 use std::process::Command;
 
 /// Execute a command string via `/bin/sh -c` and return its exit code.
+///
+/// # Errors
+///
+/// Returns an error if `/bin/sh` cannot be spawned (e.g. missing binary,
+/// permission denied). A non-zero exit from the spawned shell is _not_
+/// an error here: the function calls `std::process::exit` with the
+/// shell's exit code so one-shot mode (`fredshell -c …`) propagates it.
 pub fn run_via_sh(command: &str) -> Result<()> {
     let status = Command::new("/bin/sh")
         .arg("-c")

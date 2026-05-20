@@ -15,6 +15,10 @@ use anyhow::Result;
 ///
 /// For now we delegate to `/bin/sh -c` so we get full POSIX/bash behaviour
 /// while the native parser is still in development.
+///
+/// # Errors
+///
+/// Propagates any error from spawning `/bin/sh`. See [`exec::run_via_sh`].
 pub fn run_oneshot(command: &str) -> Result<()> {
     exec::run_via_sh(command)
 }

@@ -40,12 +40,14 @@ fn main() -> Result<()> {
         Cmd::Check => {
             cmd!("cargo", "fmt", "--all", "--check").run()?;
             cmd!("cargo", "clippy", "--all-targets", "--", "-D", "warnings").run()?;
+            cmd!("cargo-machete").run()?;
             cmd!("cargo", "test", "--workspace").run()?;
             cmd!("cargo", "doc", "--workspace", "--no-deps").run()?;
         }
         Cmd::Pc => {
             cmd!("cargo", "fmt", "--all", "--check").run()?;
             cmd!("cargo", "clippy", "--all-targets", "--", "-D", "warnings").run()?;
+            cmd!("cargo-machete").run()?;
             cmd!("cargo", "test", "--workspace").run()?;
         }
         Cmd::Coverage => {

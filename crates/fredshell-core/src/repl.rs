@@ -18,6 +18,13 @@ pub struct Options {
     pub login: bool,
 }
 
+/// Run the interactive REPL until EOF or an `exit` builtin.
+///
+/// # Errors
+///
+/// Returns an error if reading from stdin or writing the prompt to
+/// stdout fails. Builtin and external-command failures are reported
+/// to stderr and do not bubble up.
 pub fn run(_opts: Options) -> Result<()> {
     use std::io::{BufRead, Write};
 
@@ -50,7 +57,7 @@ pub fn run(_opts: Options) -> Result<()> {
 
         match builtins::try_run(&argv)? {
             Some(BuiltinOutcome::Exit(code)) => std::process::exit(code),
-            Some(BuiltinOutcome::Handled(_)) => continue,
+            Some(BuiltinOutcome::Handled(_)) => {}
             None => {
                 if let Err(e) = exec::run_via_sh(trimmed) {
                     eprintln!("fredshell: {e}");
