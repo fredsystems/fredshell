@@ -1,0 +1,8 @@
+[codespell]
+# Words that codespell flags as misspellings but appear legitimately
+# in this repository.
+#
+# - "caf" — appears inside the percent-encoded UTF-8 of "café" in the
+#   OSC 7 test vectors (c a f é → caf%C3%A9).
+# - "fo"  — RFC 4648 §10 base64 test vector ("f", "fo", "foo", ...).
+ignore-words-list = caf,fo,crate
