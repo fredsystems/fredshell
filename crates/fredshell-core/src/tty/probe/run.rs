@@ -45,7 +45,7 @@
 //! conservative default.
 
 use std::io::Write as _;
-use std::os::fd::BorrowedFd;
+use std::os::fd::{AsRawFd, BorrowedFd};
 use std::time::{Duration, Instant};
 
 use fredshell_ansi::decode::{Da1Response, DecrpmResponse, KittyKeyboardQueryResponse};
@@ -122,6 +122,18 @@ pub fn run(
     if is_probe_disabled() {
         return caps;
     }
+
+    // Probe responses must not be echoed back by the terminal driver
+    // and must not be held by canonical-mode line buffering. Enter
+    // raw mode for the duration of the probe; the RawModeGuard
+    // restores the pre-probe termios on drop. This is the only place
+    // in the open() sequence that touches termios — the REPL re-enters
+    // raw mode immediately after open() returns, so the back-to-back
+    // tcsetattr calls are intentional and cheap. If `enter` fails
+    // (e.g. fd is not a tty, ENOTTY) the probe degrades silently:
+    // we keep going without a guard and the read will simply not
+    // see any responses.
+    let _raw_guard = crate::tty::termios::enter(tty_fd.as_raw_fd()).ok();
 
     // If writing the batch fails the probe is over before it began.
     // Env-only inference is the best we can do.
@@ -331,7 +343,7 @@ mod tests {
     };
     use crate::tty::capabilities::{Capabilities, ColorSupport, Osc8Support};
     use crate::tty::probe::env::Env;
-    use std::io::Write;
+    use std::io::{Read, Write};
     use std::os::fd::{AsFd, FromRawFd};
     use std::time::{Duration, Instant};
 
@@ -515,19 +527,19 @@ mod tests {
 
     #[test]
     fn run_on_fake_pty_with_canned_responses() {
-        // End-to-end probe driven by a fake PTY: the test process
-        // writes canned response bytes from the master side; the
-        // probe reads them from the slave side and decodes.
+        // End-to-end probe driven by a fake PTY: a background thread
+        // plays the role of the terminal — it reads the probe's
+        // query batch from the master, then writes canned responses
+        // back. Writing responses from a thread (rather than
+        // pre-loading the slave input queue) is required because the
+        // probe enters raw mode via `tcsetattr(TCSAFLUSH)`, which
+        // discards any pending slave input from before the call.
         let Some(pty) = crate::tty::test_pty::FakePty::open() else {
             return;
         };
         let slave_fd = std::os::fd::AsFd::as_fd(pty.slave());
 
-        // We need a signal fd for wait_for_event; reuse the master
-        // end as a never-readable stand-in (we won't write to it).
-        // Actually we need it to never be readable from the probe's
-        // perspective except via the response path on the slave;
-        // for that, use a fresh pipe.
+        // Fresh signal pipe; the probe never expects bytes on it.
         let mut pipe_fds = [0_i32; 2];
         // SAFETY: pipe(2) takes a pointer to two i32s and writes the
         // read/write end fds on success.
@@ -538,15 +550,26 @@ mod tests {
         // SAFETY: same.
         let _sig_write = unsafe { std::os::fd::OwnedFd::from_raw_fd(pipe_fds[1]) };
 
-        // Pre-load the master with canned responses; the slave's
-        // input buffer will see them when the probe reads.
-        let mut master = std::fs::File::from(pty.master().try_clone().unwrap());
-        master.write_all(b"\x1b[?64;4c").unwrap();
-        master.write_all(b"\x1b[?15u").unwrap();
-        master.write_all(b"\x1b[?2026;1$y").unwrap();
+        // Background "terminal" thread: read whatever the probe
+        // writes (we don't validate it here; PLAN_03 covers encoder
+        // correctness) and then write the canned responses back.
+        let master_fd = pty.master().try_clone().unwrap();
+        let responder = std::thread::spawn(move || {
+            let mut master = std::fs::File::from(master_fd);
+            // Drain at least one byte of the probe batch so we know
+            // the probe has progressed past `write_batch` and into
+            // `drain_responses`.
+            let mut scratch = [0u8; 64];
+            let _ = master.read(&mut scratch);
+            master.write_all(b"\x1b[?64;4c").unwrap();
+            master.write_all(b"\x1b[?15u").unwrap();
+            master.write_all(b"\x1b[?2026;1$y").unwrap();
+            master.flush().unwrap();
+        });
 
         let env = Env::default();
         let caps = super::run(slave_fd, sig_read.as_fd(), &env);
+        responder.join().unwrap();
 
         assert_eq!(caps.color, ColorSupport::Ansi16);
         assert!(caps.kitty_keyboard);
