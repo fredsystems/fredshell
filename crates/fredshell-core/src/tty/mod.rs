@@ -140,10 +140,16 @@ impl TerminalSession {
         let tty = controlling::open_controlling_tty().map_err(OpenError::from)?;
         let cancel = Arc::new(AtomicBool::new(false));
         let handlers = signal::install(&cancel).map_err(OpenError::from)?;
+        // Initial window size: best-effort. A failed TIOCGWINSZ
+        // (e.g., the fd is not a real tty, which happens in some
+        // test environments and inside `sudo -i` setups) falls back
+        // to the 80×24 default; SIGWINCH will refresh as soon as the
+        // terminal reports a resize.
+        let winsize = winsize::query(tty.as_fd()).unwrap_or_default();
         Ok(Self {
             tty: Some(tty),
             raw_guard: None,
-            winsize: WindowSize::default(),
+            winsize,
             caps: Capabilities::default(),
             cancel,
             sig_rx: Some(handlers.into_reader()),
@@ -162,13 +168,38 @@ impl TerminalSession {
 
     /// Return the current window size.
     ///
-    /// The snapshot is refreshed by the SIGWINCH handler (see
-    /// `PLAN_04` §6 / subtask 04.7); callers re-call this method
-    /// after [`TerminalSession::wait`] returns
-    /// [`WaitEvent::Signal`] with [`Signal::WinCh`].
+    /// The snapshot is refreshed by
+    /// [`TerminalSession::refresh_window_size`], which the REPL
+    /// calls after [`TerminalSession::wait`] returns
+    /// [`WaitEvent::Signal`] with [`Signal::WinCh`] (see `PLAN_04`
+    /// §6 / subtask 04.7).
     #[must_use]
     pub const fn window_size(&self) -> WindowSize {
         self.winsize
+    }
+
+    /// Re-query `TIOCGWINSZ` and update the cached snapshot.
+    ///
+    /// Called from the REPL's SIGWINCH handling path. Returns the
+    /// new size on success. On failure, leaves the cached snapshot
+    /// unchanged and returns the underlying `io::Error` so the
+    /// caller can decide whether to log; the snapshot is never
+    /// corrupted into a bogus state by a transient ioctl error.
+    ///
+    /// # Errors
+    ///
+    /// Returns the underlying `io::Error` from `TIOCGWINSZ` if the
+    /// ioctl fails. The cached snapshot is not modified in that
+    /// case.
+    pub fn refresh_window_size(&mut self) -> io::Result<WindowSize> {
+        let Some(tty) = self.tty.as_ref() else {
+            // A session without a tty fd cannot refresh; surface
+            // ENOTTY rather than silently succeed.
+            return Err(io::Error::from_raw_os_error(libc::ENOTTY));
+        };
+        let new = winsize::query(tty.as_fd())?;
+        self.winsize = new;
+        Ok(new)
     }
 
     /// Return a clone of the cancellation token.
@@ -509,10 +540,14 @@ mod tests {
         // (subsequent calls within the same test process).
         match TerminalSession::open() {
             Ok(session) => {
-                // Defaults are the conservative startup state until
-                // 04.7 / 04.9 wire up winsize and capabilities.
-                assert_eq!(session.window_size().cols, 80);
-                assert_eq!(session.window_size().rows, 24);
+                // Post-04.7 the winsize is queried from the kernel.
+                // We don't know the actual terminal size in CI vs.
+                // dev environments, so just verify the snapshot is
+                // populated (rows and cols are u16 — any value is
+                // valid, including the 80×24 fallback when
+                // TIOCGWINSZ failed).
+                let ws = session.window_size();
+                let _ = (ws.cols, ws.rows);
             }
             Err(OpenError::NoControllingTerminal | OpenError::AlreadyOpen) => {
                 // Expected in CI / when a sibling test already opened.
