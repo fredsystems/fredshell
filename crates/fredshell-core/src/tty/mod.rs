@@ -114,21 +114,31 @@ pub struct TerminalSession {
 impl TerminalSession {
     /// Open a new session.
     ///
+    /// Today this performs only the first step of the full `open`
+    /// sequence: acquire `/dev/tty`. Signal-handler installation,
+    /// capability probing, and initial winsize read land in later
+    /// subtasks (04.4, 04.7, 04.9). The returned session is
+    /// therefore safe to construct but its capability and winsize
+    /// fields hold conservative defaults.
+    ///
     /// # Errors
     ///
     /// Returns [`OpenError::NoControllingTerminal`] if `/dev/tty`
-    /// cannot be opened (e.g. running with no controlling terminal,
-    /// such as inside a daemon). Returns [`OpenError::OpenTty`] if
-    /// the open fails for any other reason. Returns
-    /// [`OpenError::SignalSetup`] if signal-handler installation
-    /// fails.
-    ///
-    /// Until subtask 04.2 lands this method always returns
-    /// [`OpenError::NoControllingTerminal`] so callers fail loudly
-    /// rather than silently using an uninitialized session.
-    #[allow(clippy::missing_const_for_fn)] // gains syscalls in 04.2.
+    /// cannot be opened because the process has no controlling
+    /// terminal (typical in daemon and CI contexts). Returns
+    /// [`OpenError::OpenTty`] if the open fails for any other
+    /// reason. Returns [`OpenError::SignalSetup`] if signal-handler
+    /// installation fails (reserved for 04.4).
     pub fn open() -> Result<Self, OpenError> {
-        Err(OpenError::NoControllingTerminal)
+        let tty = controlling::open_controlling_tty().map_err(OpenError::from)?;
+        Ok(Self {
+            tty: Some(tty),
+            raw_guard: None,
+            winsize: WindowSize::default(),
+            caps: Capabilities::default(),
+            cancel: Arc::new(AtomicBool::new(false)),
+            sig_rx: None,
+        })
     }
 
     /// Return the cached terminal capabilities.
@@ -239,6 +249,15 @@ impl std::error::Error for OpenError {
         match self {
             Self::OpenTty(e) | Self::SignalSetup(e) => Some(e),
             Self::NoControllingTerminal | Self::AlreadyOpen => None,
+        }
+    }
+}
+
+impl From<controlling::AcquireError> for OpenError {
+    fn from(value: controlling::AcquireError) -> Self {
+        match value {
+            controlling::AcquireError::NoControllingTerminal => Self::NoControllingTerminal,
+            controlling::AcquireError::Open(e) => Self::OpenTty(e),
         }
     }
 }
@@ -374,15 +393,23 @@ mod tests {
     }
 
     #[test]
-    fn open_currently_returns_no_controlling_terminal() {
-        // Sentinel test: until 04.2 wires real /dev/tty acquisition,
-        // open() must fail loudly rather than hand back an
-        // uninitialized session. Updating this test is part of the
-        // 04.2 deliverable.
-        assert!(matches!(
-            TerminalSession::open(),
-            Err(OpenError::NoControllingTerminal)
-        ));
+    fn open_returns_session_or_no_controlling_terminal() {
+        // Post-04.2: open() acquires /dev/tty. In interactive dev
+        // shells it succeeds; in CI / nextest harnesses without a
+        // controlling terminal it returns NoControllingTerminal.
+        // Other OpenError variants would indicate a real bug.
+        match TerminalSession::open() {
+            Ok(session) => {
+                // Defaults are the conservative startup state until
+                // 04.7 / 04.9 wire up winsize and capabilities.
+                assert_eq!(session.window_size().cols, 80);
+                assert_eq!(session.window_size().rows, 24);
+            }
+            Err(OpenError::NoControllingTerminal) => {
+                // Expected in CI.
+            }
+            Err(other) => panic!("unexpected OpenError variant: {other:?}"),
+        }
     }
 
     #[test]
