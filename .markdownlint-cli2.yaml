@@ -3,3 +3,6 @@ config:
   # MD060 (table-column-style) conflicts with prettier's table formatting when
   # summary content varies in width across rows; prettier owns table layout.
   table-column-style: false
+  # MD049 (emphasis-style) conflicts with prettier's default of underscore
+  # emphasis; prettier owns inline markdown style.
+  emphasis-style: false
