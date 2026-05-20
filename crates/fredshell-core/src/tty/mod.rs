@@ -63,6 +63,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 pub use capabilities::{Capabilities, ColorSupport, Osc8Support};
+pub use pgrp::{Pid, SetPgidError, TcSetPgrpError};
 pub use signal::Signal;
 pub use wait::{TtyInput, TtyOutput};
 pub use winsize::WindowSize;
@@ -112,6 +113,11 @@ pub struct TerminalSession {
     /// Self-pipe read end, multiplexed alongside the tty in
     /// [`TerminalSession::wait`].
     sig_rx: Option<OwnedFd>,
+
+    /// The shell's own process group id, captured at `open` time.
+    /// Used by [`TerminalSession::take_foreground`] to restore the
+    /// terminal foreground after a child job terminates or stops.
+    shell_pgrp: Option<Pid>,
 }
 
 impl TerminalSession {
@@ -146,6 +152,12 @@ impl TerminalSession {
         // to the 80×24 default; SIGWINCH will refresh as soon as the
         // terminal reports a resize.
         let winsize = winsize::query(tty.as_fd()).unwrap_or_default();
+        // Cache the shell's own pgrp so take_foreground() can hand
+        // the terminal back without re-querying after every job. A
+        // failed getpgrp() (essentially impossible on Linux/macOS) is
+        // not fatal — take_foreground() will return an error if
+        // called and the field is None.
+        let shell_pgrp = Pid::current_pgrp().ok();
         Ok(Self {
             tty: Some(tty),
             raw_guard: None,
@@ -153,6 +165,7 @@ impl TerminalSession {
             caps: Capabilities::default(),
             cancel,
             sig_rx: Some(handlers.into_reader()),
+            shell_pgrp,
         })
     }
 
@@ -316,6 +329,48 @@ impl TerminalSession {
     pub const fn signal_fd(&self) -> Option<&OwnedFd> {
         self.sig_rx.as_ref()
     }
+
+    /// Hand the controlling terminal's foreground to a child process
+    /// group.
+    ///
+    /// Called after spawning a foreground job: the shell needs to
+    /// transfer the tty so the child receives keystrokes (including
+    /// `Ctrl-C`) and can write to the terminal without earning a
+    /// `SIGTTOU`. Because the shell ignores `SIGTTOU` itself, the
+    /// transfer is a single syscall with no signal dance (see
+    /// `PLAN_04` §4.1 / §7).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ForegroundError::NoTty`] if the session was opened
+    /// without a controlling-terminal fd (currently only possible in
+    /// future test paths). Returns [`ForegroundError::TcSetPgrp`] if
+    /// the underlying `tcsetpgrp(3)` call fails.
+    pub fn give_foreground(&self, pgid: Pid) -> Result<(), ForegroundError> {
+        let tty = self.tty.as_ref().ok_or(ForegroundError::NoTty)?;
+        pgrp::tcsetpgrp(tty.as_fd(), pgid).map_err(ForegroundError::TcSetPgrp)
+    }
+
+    /// Hand the controlling terminal's foreground back to the shell.
+    ///
+    /// Called after a foreground job terminates or stops, so the
+    /// shell can read its next prompt without competing with the
+    /// (possibly still-living) child.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ForegroundError::NoTty`] if the session was opened
+    /// without a controlling-terminal fd. Returns
+    /// [`ForegroundError::NoShellPgrp`] if the shell's own pgid was
+    /// not recorded at `open` time (essentially impossible on
+    /// Linux/macOS, but surfaced explicitly rather than silently
+    /// succeeding). Returns [`ForegroundError::TcSetPgrp`] if the
+    /// underlying `tcsetpgrp(3)` call fails.
+    pub fn take_foreground(&self) -> Result<(), ForegroundError> {
+        let tty = self.tty.as_ref().ok_or(ForegroundError::NoTty)?;
+        let pgid = self.shell_pgrp.ok_or(ForegroundError::NoShellPgrp)?;
+        pgrp::tcsetpgrp(tty.as_fd(), pgid).map_err(ForegroundError::TcSetPgrp)
+    }
 }
 
 /// Errors returned by [`TerminalSession::open`].
@@ -409,6 +464,41 @@ impl std::error::Error for RawModeError {
     }
 }
 
+/// Errors returned by [`TerminalSession::give_foreground`] and
+/// [`TerminalSession::take_foreground`].
+#[derive(Debug)]
+#[non_exhaustive]
+pub enum ForegroundError {
+    /// The session has no controlling-terminal fd; the foreground
+    /// cannot be moved.
+    NoTty,
+    /// The shell's own process group id was not recorded at `open`
+    /// time, so [`TerminalSession::take_foreground`] has no target
+    /// pgid to restore.
+    NoShellPgrp,
+    /// The underlying `tcsetpgrp(3)` call failed.
+    TcSetPgrp(pgrp::TcSetPgrpError),
+}
+
+impl fmt::Display for ForegroundError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::NoTty => f.write_str("session has no controlling terminal"),
+            Self::NoShellPgrp => f.write_str("shell process group was not recorded"),
+            Self::TcSetPgrp(_) => f.write_str("failed to transfer terminal foreground"),
+        }
+    }
+}
+
+impl std::error::Error for ForegroundError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::TcSetPgrp(e) => Some(e),
+            Self::NoTty | Self::NoShellPgrp => None,
+        }
+    }
+}
+
 /// Outcome of [`TerminalSession::wait`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WaitEvent {
@@ -497,6 +587,7 @@ fn drain_first_signal(fd: &OwnedFd) -> Option<Signal> {
 #[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use super::{CancellationToken, OpenError, RawModeError, TerminalSession, WaitEvent};
+    use super::{ForegroundError, Pid};
 
     #[test]
     fn cancellation_token_starts_unset() {
@@ -603,5 +694,45 @@ mod tests {
             fn assert_copy<T: Copy>() {}
             assert_copy::<WaitEvent>();
         };
+    }
+
+    #[test]
+    fn foreground_error_display_messages() {
+        assert_eq!(
+            ForegroundError::NoTty.to_string(),
+            "session has no controlling terminal"
+        );
+        assert_eq!(
+            ForegroundError::NoShellPgrp.to_string(),
+            "shell process group was not recorded"
+        );
+    }
+
+    #[test]
+    fn foreground_error_is_std_error() {
+        fn assert_error<E: std::error::Error>() {}
+        assert_error::<ForegroundError>();
+    }
+
+    #[test]
+    fn give_take_foreground_round_trip_or_acceptable_error() {
+        // On a session opened via TerminalSession::open(), giving the
+        // foreground to the shell's own pgrp and then taking it back
+        // should either succeed (when running under a real
+        // controlling terminal that the test process leads) or
+        // surface a typed ForegroundError. We never expect a panic.
+        match TerminalSession::open() {
+            Ok(session) => {
+                let Ok(pgid) = Pid::current_pgrp() else {
+                    return;
+                };
+                // Either Ok or a TcSetPgrp(_) error is acceptable —
+                // the test process may not be a session leader.
+                let _ = session.give_foreground(pgid);
+                let _ = session.take_foreground();
+            }
+            Err(OpenError::NoControllingTerminal | OpenError::AlreadyOpen) => {}
+            Err(other) => panic!("unexpected OpenError variant: {other:?}"),
+        }
     }
 }
