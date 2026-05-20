@@ -43,6 +43,7 @@ use std::io::{self, Write};
 pub mod cursor;
 pub mod decode;
 pub mod erase;
+pub(crate) mod int;
 pub mod kitty;
 pub mod mode;
 pub mod osc;

@@ -15,12 +15,13 @@
 //! The encoder is zero-allocation: the line editor redraws on every
 //! keystroke and any heap traffic in this path is a regression. The
 //! parameter integers are written using a small on-stack scratch
-//! buffer (`itoa3`) sized for the largest value the SGR surface
-//! emits (255).
+//! buffer (see the crate-internal `int` module) sized for the
+//! largest value the SGR surface emits (255).
 
 use std::io::{self, Write};
 
 use crate::Encode;
+use crate::int::{dec_len_u8, itoa3};
 
 /// A complete SGR graphic style.
 ///
@@ -226,33 +227,16 @@ impl Sgr {
     }
 }
 
-/// On-stack decimal renderer for `u8`. Returns the populated slice.
-///
-/// At most 3 ASCII digits. Used to keep encoding zero-alloc.
-fn itoa3(value: u8, buf: &mut [u8; 3]) -> &[u8] {
-    if value >= 100 {
-        buf[0] = b'0' + value / 100;
-        buf[1] = b'0' + (value / 10) % 10;
-        buf[2] = b'0' + value % 10;
-        &buf[..3]
-    } else if value >= 10 {
-        buf[0] = b'0' + value / 10;
-        buf[1] = b'0' + value % 10;
-        &buf[..2]
-    } else {
-        buf[0] = b'0' + value;
-        &buf[..1]
-    }
-}
-
-/// Decimal length of `value` for use in [`Encode::encoded_len`].
-const fn dec_len_u8(value: u8) -> usize {
-    if value >= 100 {
-        3
-    } else if value >= 10 {
-        2
-    } else {
-        1
+/// Returns the underline parameter bytes (without leading `;`) and
+/// their length. `Underline::None` returns an empty slice.
+const fn underline_param(u: Underline) -> &'static [u8] {
+    match u {
+        Underline::None => b"",
+        Underline::Single => b"4",
+        Underline::Double => b"4:2",
+        Underline::Curly => b"4:3",
+        Underline::Dotted => b"4:4",
+        Underline::Dashed => b"4:5",
     }
 }
 
@@ -263,9 +247,6 @@ impl Color {
     /// responsibility.
     const fn param_len(self, foreground: bool) -> usize {
         match self {
-            // Basic 16-color and bright (except BrightWhite bg) all
-            // emit a two-digit parameter (30..=37, 40..=47, 90..=96,
-            // 100..=106).
             Self::Black
             | Self::Red
             | Self::Green
@@ -288,9 +269,7 @@ impl Color {
                     3 // 107
                 }
             }
-            // Indexed: "38;5;N" / "48;5;N", N is 1..=3 digits.
             Self::Indexed(n) => 2 + 1 + 1 + 1 + dec_len_u8(n),
-            // Rgb: "38;2;R;G;B" / "48;2;R;G;B".
             Self::Rgb { r, g, b } => {
                 2 + 1 + 1 + 1 + dec_len_u8(r) + 1 + dec_len_u8(g) + 1 + dec_len_u8(b)
             }
@@ -329,19 +308,6 @@ impl Color {
                 w.write_all(itoa3(b, &mut buf))
             }
         }
-    }
-}
-
-/// Returns the underline parameter bytes (without leading `;`) and
-/// their length. `Underline::None` returns an empty slice.
-const fn underline_param(u: Underline) -> &'static [u8] {
-    match u {
-        Underline::None => b"",
-        Underline::Single => b"4",
-        Underline::Double => b"4:2",
-        Underline::Curly => b"4:3",
-        Underline::Dotted => b"4:4",
-        Underline::Dashed => b"4:5",
     }
 }
 
@@ -451,7 +417,7 @@ impl Encode for Sgr {
 mod tests {
     #![allow(clippy::unwrap_used, clippy::expect_used)]
 
-    use super::{Color, Sgr, Underline, itoa3};
+    use super::{Color, Sgr, Underline};
     use crate::Encode;
 
     fn encode_to_vec<E: Encode>(value: &E) -> Vec<u8> {
@@ -465,18 +431,6 @@ mod tests {
             value.encoded_len(),
         );
         out
-    }
-
-    #[test]
-    fn itoa3_renders_one_two_three_digits() {
-        let mut b = [0_u8; 3];
-        assert_eq!(itoa3(0, &mut b), b"0");
-        assert_eq!(itoa3(7, &mut b), b"7");
-        assert_eq!(itoa3(10, &mut b), b"10");
-        assert_eq!(itoa3(99, &mut b), b"99");
-        assert_eq!(itoa3(100, &mut b), b"100");
-        assert_eq!(itoa3(231, &mut b), b"231");
-        assert_eq!(itoa3(255, &mut b), b"255");
     }
 
     #[test]
