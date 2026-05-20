@@ -1578,6 +1578,7 @@ dependencies = [
  "clap",
  "color-eyre",
  "duct",
+ "fredshell-core",
 ]
 
 [[package]]
