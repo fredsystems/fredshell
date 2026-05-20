@@ -371,6 +371,33 @@ fn install_handler(signum: c_int) -> Result<(), InstallError> {
     Ok(())
 }
 
+/// Install `SIG_IGN` for `SIGQUIT`.
+///
+/// Interactive shells ignore `SIGQUIT` so that `Ctrl-\` at the prompt
+/// does not core-dump the shell. Children spawned by the shell inherit
+/// `SIG_IGN` and must explicitly restore the default disposition before
+/// `execve` (`PLAN_04` §4 table; bash's `default_buffered_input`
+/// equivalent).
+///
+/// This is intentionally separate from [`install`]: [`install`] runs
+/// in every `TerminalSession`-using context (including non-interactive
+/// tools like `xtask tty-probe` and integration tests), but
+/// `SIGQUIT=SIG_IGN` is a policy that only applies when the binary is
+/// acting as an interactive shell. The `fredshell` binary calls this
+/// before entering the REPL; non-interactive consumers leave the
+/// default disposition.
+///
+/// The call is idempotent — re-installing `SIG_IGN` is a no-op at the
+/// kernel level — and never returns [`InstallError::AlreadyInstalled`].
+///
+/// # Errors
+///
+/// Returns [`InstallError::Sigaction`] if the underlying
+/// `sigaction(2)` syscall fails.
+pub fn ignore_sigquit() -> Result<(), InstallError> {
+    install_ignore(libc::SIGQUIT)
+}
+
 fn install_ignore(signum: c_int) -> Result<(), InstallError> {
     // SAFETY: zeroed sigaction is valid; we then set the disposition.
     let mut action: sigaction = unsafe { std::mem::zeroed() };

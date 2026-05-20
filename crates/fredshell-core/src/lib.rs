@@ -48,6 +48,13 @@ pub enum CoreError {
     /// future builtins (e.g. `read`, `wait`) whose failures cannot
     /// be reduced to an exit code.
     Builtin(BuiltinError),
+    /// Failed to open or operate the terminal session in interactive
+    /// mode. The REPL falls back to cooked-stdin mode for the
+    /// `NoControllingTerminal` variant; other variants are
+    /// propagated.
+    Terminal(tty::OpenError),
+    /// `tcsetattr` or `tcgetattr` failed when entering raw mode.
+    RawMode(tty::RawModeError),
 }
 
 impl fmt::Display for CoreError {
@@ -58,6 +65,8 @@ impl fmt::Display for CoreError {
             }
             Self::ReplIo(_) => f.write_str("REPL I/O error"),
             Self::Builtin(_) => f.write_str("builtin error"),
+            Self::Terminal(_) => f.write_str("terminal session error"),
+            Self::RawMode(_) => f.write_str("failed to enter raw mode"),
         }
     }
 }
@@ -67,6 +76,8 @@ impl std::error::Error for CoreError {
         match self {
             Self::SpawnShell { source, .. } | Self::ReplIo(source) => Some(source),
             Self::Builtin(source) => Some(source),
+            Self::Terminal(source) => Some(source),
+            Self::RawMode(source) => Some(source),
         }
     }
 }

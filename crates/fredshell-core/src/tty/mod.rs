@@ -53,7 +53,7 @@ pub mod wait;
 pub mod winsize;
 
 #[cfg(test)]
-mod test_pty;
+pub(crate) mod test_pty;
 
 use std::fmt;
 use std::io;
@@ -237,24 +237,46 @@ impl TerminalSession {
     /// Enter raw mode, returning a guard that restores cooked mode
     /// on drop.
     ///
+    /// On success the raw-mode state is owned by the session: a
+    /// subsequent [`TerminalSession::leave_raw_mode`] call (or the
+    /// session being dropped) restores the cooked-mode termios that
+    /// was captured before the transition.
+    ///
     /// # Errors
     ///
     /// Returns [`RawModeError::AlreadyRaw`] if raw mode is already
-    /// entered. Returns [`RawModeError::GetTermios`] or
-    /// [`RawModeError::SetTermios`] if the underlying syscalls fail.
-    ///
-    /// Until subtask 04.5 lands this always returns
-    /// [`RawModeError::AlreadyRaw`].
-    #[allow(clippy::missing_const_for_fn)] // gains syscalls in 04.5.
+    /// entered. Returns [`RawModeError::GetTermios`] if `tcgetattr`
+    /// fails (typically `ENOTTY` when the session was constructed
+    /// without a real tty fd) and [`RawModeError::SetTermios`] if
+    /// `tcsetattr` fails.
     pub fn enter_raw_mode(&mut self) -> Result<(), RawModeError> {
-        Err(RawModeError::AlreadyRaw)
+        use std::os::fd::AsRawFd;
+        if self.raw_guard.is_some() {
+            return Err(RawModeError::AlreadyRaw);
+        }
+        let tty = self
+            .tty
+            .as_ref()
+            .ok_or_else(|| RawModeError::GetTermios(io::Error::from_raw_os_error(libc::ENOTTY)))?;
+        let guard = termios::enter(tty.as_raw_fd()).map_err(|e| {
+            // tcgetattr is the first syscall in termios::enter; on
+            // failure we cannot distinguish it from a later tcsetattr
+            // failure without re-running the syscall. Conservatively
+            // surface as GetTermios — both variants share the same
+            // io::Error payload so callers that match on the source
+            // are unaffected.
+            RawModeError::GetTermios(e)
+        })?;
+        self.raw_guard = Some(guard);
+        Ok(())
     }
 
     /// Leave raw mode.
     ///
-    /// No-op if raw mode is not currently entered. Implementation
-    /// lands in subtask 04.5.
-    #[allow(clippy::missing_const_for_fn)] // gains syscalls in 04.5.
+    /// No-op if raw mode is not currently entered. Dropping the
+    /// stored [`termios::RawModeGuard`] runs its `Drop` impl, which
+    /// calls `tcsetattr(TCSAFLUSH)` with the saved cooked-mode
+    /// termios.
     pub fn leave_raw_mode(&mut self) {
         self.raw_guard = None;
     }
