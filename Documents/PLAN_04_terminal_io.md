@@ -1,7 +1,9 @@
 # PLAN_04 — Terminal I/O, Signals, and Capability Detection
 
-> Last updated: 2026-05-20 — added §1 slave-side clarification before implementation.
-> Phase: A. Status: draft.
+> Last updated: 2026-05-20 — implementation complete on
+> task-04/terminal-io; status flipped to `implemented`; added
+> §14 implementation log and §15 cleanup items.
+> Phase: A. Status: implemented.
 > Consumes: PLAN_02 §5, §6.1. Consumed by: PLAN_07 (line editor),
 > PLAN_08 (prompt), PLAN_03 (capability boundary).
 
@@ -586,3 +588,104 @@ rather than rediscovering them.
   transition, and decodes the bytes PLAN_04's `input()` returns.
 - **PLAN_08** (prompt) consumes `Capabilities` to decide which
   PLAN_03 sequences are safe.
+
+## 14. Implementation log
+
+All subtasks landed on the `task-04/terminal-io` branch. One commit
+per subtask except where noted, per AGENTS.md.
+
+| Subtask | Status   | Commit    | Notes                                                                                                 |
+| ------- | -------- | --------- | ----------------------------------------------------------------------------------------------------- |
+| 04.1    | complete | `aaa4b18` | tty module skeleton, public surface stubs.                                                            |
+| 04.2    | complete | `b10e1bc` | `/dev/tty` acquisition + classified `AcquireError` / `OpenError` mapping.                             |
+| 04.3    | complete | `7448fcf` | Capability surface (struct, enums) + probe interpreters + env-var heuristics.                         |
+| 04.4    | complete | `912d245` | Signal handlers + self-pipe; `Signal` enum; `ignore_sigquit` lives in binary (see §15 item 1).        |
+| 04.5    | complete | `8844dfe` | `RawModeGuard` RAII with `tcsetattr(TCSAFLUSH)` restoration. Captured a stub-fix during this subtask. |
+| 04.6    | complete | `7f57f2d` | `pselect` multiplexer, `TtyInput`/`TtyOutput`, fake-PTY harness.                                      |
+| 04.7    | complete | `d03f9f6` | `TIOCGWINSZ` query + `refresh_window_size`.                                                           |
+| 04.8    | complete | `a32a1ce` | Pgrp plumbing: `Pid`, `setpgid`, `tcsetpgrp`/`tcgetpgrp`, `give_foreground` / `take_foreground`.      |
+| 04.9    | complete | `f3ba7f4` | Capability probe orchestrator wired into `TerminalSession::open`.                                     |
+| 04.10   | complete | `f9fcc8b` | REPL on `TerminalSession`; raw-mode byte-pump + cooked stdin fallback.                                |
+| 04.11   | complete | `ebfa699` | `cargo xtask tty-probe` diagnostic subcommand.                                                        |
+| 04.12   | complete | this file | Plan-document updates; status flips; cleanup-item registry.                                           |
+
+### Post-04.10 fixes (interactive smoke testing)
+
+Three fix commits landed after 04.10 surfaced behavior the subtask
+did not exercise. They are recorded here so the git history reads
+clean and the design notes match what shipped.
+
+| Commit    | Fix                                                                                                                                                                                                                                                                               |
+| --------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `b07a377` | The capability probe writes DA1, kitty-keyboard, and DECRQM queries and reads responses. When the surrounding terminal is in cooked mode, those responses are echoed at startup. The probe now enters a short-lived `RawModeGuard` before writing and drops it after the timeout. |
+| `7694e82` | The raw-mode byte-pump originally treated all bytes as printable. Ctrl-C / Ctrl-D / CR / LF now terminate the read with typed `InputOutcome` variants (`Interrupted` / `Eof` / `LineSubmitted`) instead of being echoed verbatim.                                                 |
+| `c2d0ade` | Raw-mode REPL grew a session-lifetime `line_buf: Vec<u8>` and a `dispatch_line(&str)` helper shared with the cooked fallback. Backspace / DEL erase the last byte. The loop leaves raw mode for the duration of each command dispatch and re-enters it afterward.                 |
+
+### Design notes recorded post-implementation
+
+- **Probe runs in raw mode.** PLAN_04 §5 did not specify this. The
+  cooked-mode fallback would echo every byte the terminal sends back
+  in response to DA1 / kitty / DECRQM. The probe now enters raw
+  mode for its 50 ms window and leaves it afterward; raw mode is
+  re-entered later by the REPL through the normal API path. Two
+  back-to-back `tcsetattr` calls at startup are accepted as the
+  cost of avoiding visible garbage on first prompt.
+- **Raw loop drops raw mode during dispatch.** PLAN_04 §3.3
+  described the RAII guard but did not pin the lifecycle around
+  `dispatch_line`. The REPL drops the guard before running the
+  command (so the child inherits cooked mode and behaves the way
+  users expect when stdin is a tty) and re-enters raw mode when
+  control returns. This matches bash and zsh behavior.
+- **Line buffer is part of `TerminalSession`-driven REPL state.**
+  The buffer is owned by `drive_raw_loop_session`, not by
+  `TerminalSession` itself; the session is concerned with kernel
+  resources, not with line-edit state. The buffer is cleared when
+  the SIGINT path fires, so Ctrl-C abandons in-progress input.
+- **Cooked-stdin fallback preserved.** When `TerminalSession::open`
+  returns `OpenError::NoControllingTerminal`, the REPL falls back
+  to `BufReader<Stdin>::read_line`. Both paths share
+  `dispatch_line` so command semantics are identical.
+
+## 15. Cleanup items surfaced during implementation
+
+These are pre-existing or implementation-surfaced bugs that were
+intentionally not fixed inside the subtask that found them, per
+AGENTS.md "Pre-Existing Bugs Surfaced During a Subtask." Each item
+has a number; later work that depends on the fix should reference
+the number.
+
+### 15.1. macOS errno location
+
+- **Surface point.** `crates/fredshell-core/src/tty/signal.rs:407` and `:434`.
+  Introduced during subtask 04.4 (commit `912d245`); the macOS
+  branch was not exercised because development is Linux-only today.
+- **Impact.** Build will fail on macOS: `libc::__errno_location()` is
+  Linux-only; macOS exposes `libc::__error()`. This blocks any
+  PLAN_04 consumer on macOS.
+- **Scope of fix.** Two call sites in `signal.rs`. Wrap in `cfg`
+  branches: `#[cfg(target_os = "linux")] libc::__errno_location()`
+  vs. `#[cfg(target_os = "macos")] libc::__error()`. Both return
+  `*mut c_int`.
+- **Suggested approach.** Add a tiny `errno_ptr()` helper at the top
+  of `signal.rs` that returns the platform-appropriate pointer, and
+  replace both call sites. No public API change.
+- **Verification.** Cross-compile check on macOS in CI (when CI
+  gains macOS coverage) or local `cargo check --target
+x86_64-apple-darwin` with the appropriate stdlib.
+- **Scheduling.** Must be fixed before macOS support is claimed.
+  Not a blocker for any Linux-side PLAN_05 / PLAN_06 work.
+
+### 15.2. 04.5 stub-fix note
+
+- **Surface point.** Subtask 04.5 (commit `8844dfe`).
+- **Impact.** Cosmetic only. An interim stub from 04.1 referencing
+  `Option<RawModeGuard>` was reshaped during 04.5 implementation;
+  the stub was annotated with a `#[allow(dead_code)]` that is now
+  unnecessary because the field is populated by `enter_raw_mode`.
+- **Scope.** A single `#[allow(dead_code)]` on the `raw_guard`
+  field of `TerminalSession` in `crates/fredshell-core/src/tty/mod.rs`.
+- **Suggested approach.** Remove the attribute; the field is used
+  by `enter_raw_mode` / `leave_raw_mode` / `Drop`.
+- **Verification.** `cargo clippy --all-targets --all-features -- -D warnings`.
+- **Scheduling.** Trivial; can be batched with any future tty/mod.rs
+  edit.
