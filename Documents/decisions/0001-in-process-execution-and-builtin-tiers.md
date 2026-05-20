@@ -69,7 +69,7 @@ fredshell adopts the third strategy. Concretely:
      `umask`, `ulimit`, `trap`, `wait`, `kill`, `jobs`, `fg`, `bg`, `shift`,
      `getopts`, `times`, `let`, `declare`/`typeset`, `local`, `readonly`,
      `return`, `break`, `continue`, `printf`, `echo`, `pushd`, `popd`, `dirs`.
-     The exact inventory is owned by `PLAN_08_builtins.md`.
+     The exact inventory is owned by `PLAN_09_builtins.md`.
 
    - **Tier 2 — Replacement builtins.** Common externals reimplemented in-
      process for UX, performance, and cross-platform consistency. Initial
@@ -129,7 +129,7 @@ fredshell adopts the third strategy. Concretely:
 - **Risk: tier-2 sprawl.** Every "we should also build `cp` and `mv`" request
   expands the maintenance burden.
   **Mitigation:** new tier-2 entries require an ADR or a documented entry in
-  `PLAN_08` with usage-frequency justification.
+  `PLAN_09` with usage-frequency justification.
 
 - **Risk: behavioral divergence between tier-2 and the external binary the
   user expects.**
@@ -157,8 +157,10 @@ fredshell adopts the third strategy. Concretely:
 
 ## References
 
-- `PLAN_08_builtins.md` — the actual builtin inventory and per-builtin parity
+- `PLAN_09_builtins.md` — the actual builtin inventory and per-builtin parity
   targets.
 - `PLAN_02_architecture.md` — where the executor and dispatch table live.
-- `PLAN_05_bash_compat.md` — the native parser/executor that this ADR
+- `PLAN_06_bash_compat.md` — the native parser/executor that this ADR
   presupposes.
+- `PLAN_05_testing.md` — the spec-test harness that measures tier-2 parity
+  against bash.
