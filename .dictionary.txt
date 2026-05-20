@@ -1,4 +1,6 @@
+caf
 crate
+fo
 fredshell
 iTerm
 nushell
