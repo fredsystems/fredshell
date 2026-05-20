@@ -2,12 +2,14 @@
 resolver = "3"
 members = [
   "crates/fredshell",
+  "crates/fredshell-ansi",
   "crates/fredshell-core",
   "crates/fredshell-prompt",
   "xtask",
 ]
 default-members = [
   "crates/fredshell",
+  "crates/fredshell-ansi",
   "crates/fredshell-core",
   "crates/fredshell-prompt",
 ]

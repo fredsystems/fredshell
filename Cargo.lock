@@ -305,6 +305,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "fredshell-ansi"
+version = "0.1.0"
+
+[[package]]
 name = "fredshell-core"
 version = "0.1.0"
 dependencies = [
