@@ -1,2 +1,5 @@
 config:
   line-length: false
+  # MD060 (table-column-style) conflicts with prettier's table formatting when
+  # summary content varies in width across rows; prettier owns table layout.
+  table-column-style: false

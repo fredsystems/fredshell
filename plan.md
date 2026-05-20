@@ -1,7 +1,6 @@
 # fredshell — Master Plan
 
-> Last updated: 2026-05-20 — renumbered: `fredshell-ansi` design promoted to
-> PLAN_03, terminal-I/O policy promoted to PLAN_04; subsequent docs shifted.
+> Last updated: 2026-05-20 — PLAN_01 first draft landed.
 
 This is the top-level index of fredshell's planning documents. Read this first.
 The actual design lives in the per-area `PLAN_XX_*.md` documents and the ADRs in
@@ -56,7 +55,7 @@ Two foundational decisions shape everything else and are recorded as ADRs:
 
 | #   | Document                               | Status        | Summary                                                                                               |
 | --- | -------------------------------------- | ------------- | ----------------------------------------------------------------------------------------------------- |
-| 01  | `Documents/PLAN_01_philosophy.md`      | draft pending | Goals, non-goals, target user, success criteria.                                                      |
+| 01  | `Documents/PLAN_01_philosophy.md`      | draft         | Goals, non-goals, target user, success criteria.                                                      |
 | 02  | `Documents/PLAN_02_architecture.md`    | draft pending | Crate layout, module boundaries, key traits, dependency direction.                                    |
 | 03  | `Documents/PLAN_03_ansi.md`            | draft pending | `fredshell-ansi` crate: encoder API, minimal decoder, `Write`-based contract, allocation budget.      |
 | 04  | `Documents/PLAN_04_terminal_io.md`     | draft pending | Raw mode discipline, signals, process groups, terminal feature detection, kitty keyboard negotiation. |
