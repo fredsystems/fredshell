@@ -186,9 +186,25 @@ re-litigating.
 
 ### NG1. Not a POSIX-conformant `/bin/sh`
 
-fredshell targets _bash compatibility_, not POSIX shell conformance. We
-will not pursue passing the POSIX shell conformance test suite. Where
-bash and POSIX disagree, we follow bash.
+fredshell targets _bash compatibility_, not POSIX shell certification.
+The distinction matters:
+
+- POSIX shell _behavior_ is the required substrate. Bash is itself a
+  POSIX-compliant shell with extensions, so any shell that correctly
+  runs real bash scripts is necessarily also implementing POSIX
+  semantics for the overlapping surface (parameter expansion, quoting,
+  redirection, control flow, builtins like `cd` / `export` / `set`,
+  exit-status propagation). We do not get to skip POSIX; we get to skip
+  pursuing _certification_ of POSIX.
+- We will not run, target, or claim conformance with the POSIX shell
+  conformance test suite. Where bash and POSIX disagree (and they do —
+  in `echo` semantics, brace expansion, `[[ ]]`, arrays, process
+  substitution, `local`, and others), we follow bash.
+- We will not preserve POSIX-only behaviors that bash overrides. We
+  will not add a `--posix` mode in v1.
+
+In short: POSIX is an implementation detail of being bash-compatible,
+not a goal in its own right.
 
 ### NG2. Not Windows-compatible
 
