@@ -24,6 +24,7 @@ pub mod tty;
 pub use exec::builtin::{Tier2Builtin, Tier2Ctx, Tier2Error};
 pub use exec::env::ExecEnv;
 pub use exec::error::{ExecError, ExitStatus, RunError, RunResult};
+pub use exec::{run_script, run_source};
 pub use parser::{ParseError, ParseErrorKind, Script, parse};
 
 use std::fmt;

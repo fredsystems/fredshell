@@ -124,6 +124,7 @@ pub(crate) fn dispatch_script(
     capture: &mut Capture<'_>,
 ) -> Result<RunResult, RunError> {
     let mut status = ExitStatus::SUCCESS;
+    let mut exit_requested = false;
     for raw_line in script.source().split('\n') {
         let line = raw_line.trim();
         if line.is_empty() {
@@ -133,11 +134,16 @@ pub(crate) fn dispatch_script(
             LineOutcome::Continue(s) => status = s,
             LineOutcome::Exit(s) => {
                 status = s;
+                exit_requested = true;
                 break;
             }
         }
     }
-    Ok(RunResult::new(status))
+    Ok(if exit_requested {
+        RunResult::exit(status)
+    } else {
+        RunResult::new(status)
+    })
 }
 
 /// What [`dispatch_line`] reports back to [`dispatch_script`].
@@ -289,11 +295,42 @@ mod tests {
     }
 
     #[test]
-    fn run_source_succeeds_on_empty_source() {
+    fn exit_builtin_short_circuits_with_status() {
         let _g = lock();
         let mut env = sandbox();
-        let r = run_source("", &mut env).expect("empty is fine");
-        assert_eq!(r.status, ExitStatus::SUCCESS);
+        let captured =
+            testing::run_source_capturing("echo before\nexit 42\necho after\n", &mut env)
+                .expect("ok");
+        assert_eq!(captured.result.status, ExitStatus(42));
+        assert!(
+            captured.result.exit_requested,
+            "exit builtin must set exit_requested"
+        );
+        // "before" ran; "after" did not.
+        assert_eq!(captured.stdout, b"before\n");
+    }
+
+    #[test]
+    fn exit_builtin_with_no_arg_returns_zero() {
+        let _g = lock();
+        let mut env = sandbox();
+        let captured =
+            testing::run_source_capturing("exit\necho unreachable\n", &mut env).expect("ok");
+        assert_eq!(captured.result.status, ExitStatus::SUCCESS);
+        assert!(captured.result.exit_requested);
+        assert!(captured.stdout.is_empty());
+    }
+
+    #[test]
+    fn non_exit_script_leaves_exit_requested_false() {
+        let _g = lock();
+        let mut env = sandbox();
+        let r = run_source("false\n", &mut env).expect("runs");
+        assert_eq!(r.status, ExitStatus(1));
+        assert!(
+            !r.exit_requested,
+            "non-zero exit without `exit` builtin must not request termination"
+        );
     }
 
     #[test]
@@ -371,28 +408,6 @@ mod tests {
             testing::run_source_capturing("\n\necho x\n\n\necho y\n", &mut env).expect("ok");
         assert_eq!(captured.result.status, ExitStatus::SUCCESS);
         assert_eq!(captured.stdout, b"x\ny\n");
-    }
-
-    #[test]
-    fn exit_builtin_short_circuits_with_status() {
-        let _g = lock();
-        let mut env = sandbox();
-        let captured =
-            testing::run_source_capturing("echo before\nexit 42\necho after\n", &mut env)
-                .expect("ok");
-        assert_eq!(captured.result.status, ExitStatus(42));
-        // "before" ran; "after" did not.
-        assert_eq!(captured.stdout, b"before\n");
-    }
-
-    #[test]
-    fn exit_builtin_with_no_arg_returns_zero() {
-        let _g = lock();
-        let mut env = sandbox();
-        let captured =
-            testing::run_source_capturing("exit\necho unreachable\n", &mut env).expect("ok");
-        assert_eq!(captured.result.status, ExitStatus::SUCCESS);
-        assert!(captured.stdout.is_empty());
     }
 
     #[test]

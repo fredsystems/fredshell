@@ -51,13 +51,38 @@ impl fmt::Display for ExitStatus {
 pub struct RunResult {
     /// Final exit status of the script.
     pub status: ExitStatus,
+    /// `true` when the script requested process termination via the
+    /// `exit` builtin. The binary REPL acts on this by calling
+    /// [`std::process::exit`] with [`Self::status`]; the spec
+    /// harness records it but does not terminate.
+    ///
+    /// The flag is set only when the dispatcher's per-line loop
+    /// broke on the `exit` builtin — a script that runs to
+    /// completion without calling `exit` leaves it `false`, even if
+    /// the final line exited non-zero.
+    pub exit_requested: bool,
 }
 
 impl RunResult {
-    /// Construct a [`RunResult`] from an [`ExitStatus`].
+    /// Construct a [`RunResult`] from an [`ExitStatus`] with
+    /// `exit_requested = false`. The common case: the script ran to
+    /// completion and the caller should not terminate.
     #[must_use]
     pub const fn new(status: ExitStatus) -> Self {
-        Self { status }
+        Self {
+            status,
+            exit_requested: false,
+        }
+    }
+
+    /// Construct a [`RunResult`] that signals the script requested
+    /// termination via the `exit` builtin.
+    #[must_use]
+    pub const fn exit(status: ExitStatus) -> Self {
+        Self {
+            status,
+            exit_requested: true,
+        }
     }
 }
 
@@ -174,6 +199,14 @@ mod tests {
     fn run_result_new_round_trips() {
         let r = RunResult::new(ExitStatus(42));
         assert_eq!(r.status, ExitStatus(42));
+        assert!(!r.exit_requested);
+    }
+
+    #[test]
+    fn run_result_exit_sets_flag() {
+        let r = RunResult::exit(ExitStatus(7));
+        assert_eq!(r.status, ExitStatus(7));
+        assert!(r.exit_requested);
     }
 
     #[test]
