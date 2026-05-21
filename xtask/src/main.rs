@@ -9,6 +9,7 @@
 //!   check     — cargo fmt --check, clippy, test, doc
 //!   pc        — pre-commit equivalent (invoked from the nix devshell)
 //!   coverage  — cargo llvm-cov producing lcov.info
+//!   spec      — bash-compat spec harness subcommands (`PLAN_05`)
 //!   tty-probe — open a `TerminalSession` against the developer's real
 //!               controlling terminal and print the detected
 //!               `Capabilities` + initial `WindowSize`. Per `PLAN_04`
@@ -19,6 +20,8 @@ use clap::{Parser, Subcommand};
 use color_eyre::eyre::{bail, Result};
 use duct::cmd;
 use fredshell_core::tty::TerminalSession;
+
+mod spec;
 
 #[derive(Parser)]
 struct Cli {
@@ -42,6 +45,11 @@ enum Cmd {
     /// Diagnostic tool described in `PLAN_04` §9. Must be run from an
     /// interactive terminal — fails fast in CI / non-tty contexts.
     TtyProbe,
+    /// Bash-compat spec harness subcommands (`PLAN_05`).
+    Spec {
+        #[command(subcommand)]
+        cmd: spec::SpecCmd,
+    },
 }
 
 fn main() -> Result<()> {
@@ -78,6 +86,9 @@ fn main() -> Result<()> {
         }
         Cmd::TtyProbe => {
             run_tty_probe()?;
+        }
+        Cmd::Spec { cmd } => {
+            spec::run(&cmd)?;
         }
     }
 

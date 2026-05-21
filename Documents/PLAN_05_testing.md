@@ -369,17 +369,23 @@ exists but its output must be reviewed line-by-line before commit.
 The reference bash is pinned per platform in `tests/spec/REFERENCE.md`.
 The pin is established by what the fredshell nix flake delivers.
 
-**Current state (2026-05-21):** the flake uses `nixos-unstable` and
-does not pin bash explicitly. As of this writing,
-`nixos-unstable` delivers `bash-5.3p9` and `coreutils-9.7` on
-Linux. These are recorded as the v1 reference until the flake adds
-explicit pinning.
+**Current state (2026-05-21, post-05.3):** the flake adds a
+dedicated `nixpkgs-reference` input (pinned to
+`d233902339c02a9c334e7e593de68855ad26c4cb`, the same rev the floating
+`nixpkgs` input was locked at when 05.3 landed) and exposes
+`packages.<system>.bashReference` and
+`packages.<system>.coreutilsReference`. At this pin, the reference
+toolchain is `bash-5.3p9` and `coreutils-9.10`. The devshell exports
+`FREDSHELL_REFERENCE_BASH` / `FREDSHELL_REFERENCE_COREUTILS` (and
+their `_VERSION` siblings, plus matching `FREDSHELL_FLOATING_*`
+vars) so the spec harness consumes the pinned binaries by absolute
+path and never falls back to the host bash.
 
-**Required follow-up (PLAN_05a subtask):** pin bash and coreutils in
-the flake explicitly so the reference does not drift when
-`nixos-unstable` rolls forward. Until then, every `xtask spec
-record` run captures the actual versions in
-`tests/spec/REFERENCE.md` as a header comment in each fixture.
+The pin is documented in `tests/spec/REFERENCE.md` with a machine-
+readable `[reference]` TOML block; `cargo xtask spec versions` parses
+that block, verifies it matches what the devshell is serving, and
+reports drift versus the floating `nixpkgs` input as advisory output
+(non-fatal). See `tests/spec/REFERENCE.md` for the bump policy.
 
 The host system bash (e.g. macOS's bash 3.2) is never used as an
 oracle. Behavior differences between bash 5.3 and other versions are
@@ -664,9 +670,9 @@ document, not in side notes.
   until PLAN_06b removes it.
 - ~~Capture mechanism — `ExecEnv` field vs. sibling function.~~
   Resolved: §5.2. Capture moves onto `ExecEnv`.
-- ~~Reference bash version.~~ Resolved: §4.5. Records actual current
-  flake versions (bash 5.3.9, coreutils 9.7) and mandates explicit
-  pinning as a PLAN_05a subtask.
+- ~~Reference bash version.~~ Resolved: §4.5. v1 reference is
+  `bash-5.3p9` + `coreutils-9.10`, pinned via the `nixpkgs-reference`
+  flake input (05.3) and documented in `tests/spec/REFERENCE.md`.
 - ~~Vendoring scope.~~ Resolved: §11 is exhaustive for bash
   builtins; curated for coreutils with explicit dispositions.
 - ~~Case-status taxonomy.~~ Resolved: §12.
@@ -804,7 +810,7 @@ All are owned by PLAN_06b. `coproc` and `time` are open questions:
 (may be deferred to a later phase); `time` is a keyword-level builtin
 that the parser must recognize.
 
-### 11.2. Coreutils 9.7 — exhaustive
+### 11.2. Coreutils 9.10 — exhaustive
 
 Sourced from `ls $(nix-store -q --references $(which coreutils))/bin`
 on the pinned reference coreutils. All 109 binaries listed below.
@@ -1040,10 +1046,16 @@ point. For now it is one task.
   stdout/stderr). The PLAN_06a `exec/testing.rs` helper is rewritten
   on top of the new `ExecEnv` shape and de-`#[allow(dead_code)]`-ed.
 
-- **05.3** Pin bash and coreutils in `flake.nix` explicitly (current
-  unstable: bash 5.3.9, coreutils 9.7). Add a regression test in
-  `xtask` that asserts the pinned versions match
-  `tests/spec/REFERENCE.md`.
+- **05.3** Pin bash and coreutils in `flake.nix` via a dedicated
+  `nixpkgs-reference` input (current pin: `bash-5.3p9`,
+  `coreutils-9.10`). Expose `bashReference` / `coreutilsReference`
+  packages. Devshell exports `FREDSHELL_REFERENCE_*` and
+  `FREDSHELL_FLOATING_*` env vars. Document the pin and the bump
+  policy in `tests/spec/REFERENCE.md` as a parseable `[reference]`
+  TOML block. Add `cargo xtask spec versions` that verifies the doc
+  matches the devshell and reports drift versus the floating
+  `nixpkgs` input as advisory. Regression test in `xtask` asserts
+  `tests/spec/REFERENCE.md` parses and matches the pinned values.
 
 - **05.4** Create the `fredshell-spec-runner` crate. Library +
   binary. Library API: `run_case(path: &Path) -> CaseResult`.
@@ -1116,10 +1128,11 @@ Every subtask runs the full verification suite per AGENTS.md:
 To be filled as subtasks complete, one row per subtask, format
 matching PLAN_06a §11.
 
-| Subtask | Commit | Date       | Notes                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
-| ------- | ------ | ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 05.1    | TBD    | 2026-05-21 | Added `ExternalCommandPolicy` enum (`FallbackToSh` default, `Strict`) and routed the dispatcher through it. `ExecEnv::from_process()` defaults to `FallbackToSh`; `ExecEnv::sandboxed()` defaults to `Strict`. New `ExecError::NoExternalExecutor { command, reason }` variant with `NoExternalExecutorReason::{PolicyStrict, UnparsableArgv}`. 12 new unit tests + 1 integration test cover the strict path; existing tests opt into `FallbackToSh` via the test helper. Workspace: 207 unit / 5 integration tests passing; clippy clean (one scoped `needless_pass_by_ref_mut` allow on `dispatch_line` with a forward-compat rationale for 05.2 / 06b mutations); machete clean.                                                                                                                                                                                                                                                                                        |
-| 05.2    | TBD    | 2026-05-21 | Moved stdio onto `ExecEnv` as `stdout: Box<dyn Write + Send>` / `stderr: Box<dyn Write + Send>`, defaulting to `io::stdout()` / `io::stderr()` in both constructors. Manual `Debug` impl renders writers as `"<dyn Write>"`. Removed the `Capture` enum from `dispatch_script`; `spawn_via_sh` now always pipes child stdio and copies it through the env writers (uniform path; `PLAN_06b` reclaims the extra copy via inherited fds when writers are real stdio). New `exec::testing` module (gated `#[cfg(test)]`) ships `SharedBuf` (`Arc<Mutex<Vec<u8>>>` newtype, `Write` + `Clone`) and `run_source_capturing`, which swaps shared sinks onto a caller-supplied env, runs `parse + dispatch_script`, and restores prior writers on both success and `RunError::Parse` paths. Bench `exec_roundtrip_parse_and_exec` opts into `FallbackToSh` for the strict-default sandbox env. 210 lib + 4 smoke + 5 prompt + 112 ansi tests passing; clippy clean; machete clean. |
+| Subtask | Commit | Date       | Notes                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| ------- | ------ | ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 05.1    | TBD    | 2026-05-21 | Added `ExternalCommandPolicy` enum (`FallbackToSh` default, `Strict`) and routed the dispatcher through it. `ExecEnv::from_process()` defaults to `FallbackToSh`; `ExecEnv::sandboxed()` defaults to `Strict`. New `ExecError::NoExternalExecutor { command, reason }` variant with `NoExternalExecutorReason::{PolicyStrict, UnparsableArgv}`. 12 new unit tests + 1 integration test cover the strict path; existing tests opt into `FallbackToSh` via the test helper. Workspace: 207 unit / 5 integration tests passing; clippy clean (one scoped `needless_pass_by_ref_mut` allow on `dispatch_line` with a forward-compat rationale for 05.2 / 06b mutations); machete clean.                                                                                                                                                                                                                                                                                                                 |
+| 05.2    | TBD    | 2026-05-21 | Moved stdio onto `ExecEnv` as `stdout: Box<dyn Write + Send>` / `stderr: Box<dyn Write + Send>`, defaulting to `io::stdout()` / `io::stderr()` in both constructors. Manual `Debug` impl renders writers as `"<dyn Write>"`. Removed the `Capture` enum from `dispatch_script`; `spawn_via_sh` now always pipes child stdio and copies it through the env writers (uniform path; `PLAN_06b` reclaims the extra copy via inherited fds when writers are real stdio). New `exec::testing` module (gated `#[cfg(test)]`) ships `SharedBuf` (`Arc<Mutex<Vec<u8>>>` newtype, `Write` + `Clone`) and `run_source_capturing`, which swaps shared sinks onto a caller-supplied env, runs `parse + dispatch_script`, and restores prior writers on both success and `RunError::Parse` paths. Bench `exec_roundtrip_parse_and_exec` opts into `FallbackToSh` for the strict-default sandbox env. 210 lib + 4 smoke + 5 prompt + 112 ansi tests passing; clippy clean; machete clean.                          |
+| 05.3    | TBD    | 2026-05-21 | Pinned the reference toolchain via a dedicated `nixpkgs-reference` flake input at rev `d233902339c02a9c334e7e593de68855ad26c4cb` (`bash-5.3p9`, `coreutils-9.10`). Exposed `packages.<system>.bashReference` and `packages.<system>.coreutilsReference`. Devshell exports `FREDSHELL_REFERENCE_BASH` / `FREDSHELL_REFERENCE_COREUTILS` (absolute paths) plus `_VERSION` siblings and matching `FREDSHELL_FLOATING_*` vars for drift advisories. Created `tests/spec/REFERENCE.md` with the bump policy and a parseable `[reference]` TOML block. New `cargo xtask spec versions` subcommand parses the doc, verifies it matches the devshell env, and reports drift versus floating `nixpkgs` as advisory output. New `xtask::spec` module with 6 unit tests (parser happy/error paths + on-disk doc regression test). PLAN_05 §4.5 / §11.2 / §13.3 updated to reflect the new versions (9.7 → 9.10). 112 ansi + 210 lib + 4 smoke + 5 prompt + 6 xtask tests passing; clippy clean; machete clean. |
 
 ## 15. Cleanup registry
 
