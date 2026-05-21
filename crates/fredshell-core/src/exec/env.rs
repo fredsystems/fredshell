@@ -18,6 +18,8 @@
 
 use std::collections::HashMap;
 use std::env;
+use std::fmt;
+use std::io::{self, Write};
 use std::path::PathBuf;
 
 use super::error::ExecError;
@@ -66,11 +68,18 @@ pub enum ExternalCommandPolicy {
 /// executor mutates the working directory on `cd` and (in `PLAN_06b`)
 /// mutates the environment on `export`.
 ///
-/// `#[non_exhaustive]` because `PLAN_06b` adds fields:
-/// `stdin`/`stdout`/`stderr` (boxed I/O handles), `shell` (the
-/// `ShellState`), `builtins` (the `BuiltinRegistry`), `path_policy`,
-/// `signal_policy`. See `PLAN_02` §4.2.
-#[derive(Debug)]
+/// `#[non_exhaustive]` because `PLAN_06b` adds fields: `stdin` (boxed
+/// reader), `shell` (the `ShellState`), `builtins` (the
+/// `BuiltinRegistry`), `path_policy`, `signal_policy`. See `PLAN_02`
+/// §4.2.
+///
+/// `PLAN_05` 05.2 moved `stdout` and `stderr` from a sibling
+/// [`super::Capture`] enum onto this struct as boxed [`Write`]
+/// trait objects so the harness can inject buffer sinks without a
+/// dispatcher-level carve-out. The writers must be `Send` so a future
+/// parallel harness (open in `PLAN_05` §10.2) can drive cases on
+/// worker threads without a refactor; the binary REPL's threading
+/// shape (a single executor thread per process) is unaffected.
 #[non_exhaustive]
 pub struct ExecEnv {
     /// Working directory.
@@ -88,6 +97,23 @@ pub struct ExecEnv {
     /// migrates to `HashMap<OsString, OsString>` per `PLAN_02` §4.2.
     pub env: HashMap<String, String>,
 
+    /// Standard output sink.
+    ///
+    /// Every byte the executor emits on behalf of the script goes
+    /// through this writer. The binary REPL leaves it pointed at
+    /// [`io::stdout`]; the spec harness swaps in a buffer sink (see
+    /// [`super::testing`]).
+    ///
+    /// In v0, only the `spawn_via_sh` path actually writes here —
+    /// builtins (`cd`, `exit`) do not produce stdout. `PLAN_06b`
+    /// rewrites builtins to route through this field too, at which
+    /// point this docstring's "every byte" claim becomes literally
+    /// true.
+    pub stdout: Box<dyn Write + Send>,
+
+    /// Standard error sink. Mirror of [`Self::stdout`].
+    pub stderr: Box<dyn Write + Send>,
+
     /// Whether the dispatcher may shell out to `/bin/sh -c` for
     /// commands it cannot handle natively.
     ///
@@ -99,6 +125,21 @@ pub struct ExecEnv {
     /// Either default can be overridden by mutating this field after
     /// construction.
     pub external_command_policy: ExternalCommandPolicy,
+}
+
+impl fmt::Debug for ExecEnv {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        // `Box<dyn Write>` is not `Debug`; render placeholders so the
+        // struct as a whole stays printable for `assert!` diagnostics
+        // and `dbg!`.
+        f.debug_struct("ExecEnv")
+            .field("cwd", &self.cwd)
+            .field("env", &self.env)
+            .field("stdout", &"<dyn Write>")
+            .field("stderr", &"<dyn Write>")
+            .field("external_command_policy", &self.external_command_policy)
+            .finish()
+    }
 }
 
 impl ExecEnv {
@@ -130,6 +171,8 @@ impl ExecEnv {
         Ok(Self {
             cwd,
             env,
+            stdout: Box::new(io::stdout()),
+            stderr: Box::new(io::stderr()),
             external_command_policy: ExternalCommandPolicy::FallbackToSh,
         })
     }
@@ -148,11 +191,17 @@ impl ExecEnv {
     /// fredshell-as-itself rather than fredshell-plus-bash. Tests
     /// that want to exercise the v0 fallback can flip the field to
     /// [`ExternalCommandPolicy::FallbackToSh`] after construction.
+    ///
+    /// [`Self::stdout`] and [`Self::stderr`] default to [`io::stdout`]
+    /// and [`io::stderr`]; the harness swaps in [`super::testing`]'s
+    /// shared buffer wrappers after construction.
     #[must_use]
     pub fn sandboxed(cwd: PathBuf) -> Self {
         Self {
             cwd,
             env: HashMap::new(),
+            stdout: Box::new(io::stdout()),
+            stderr: Box::new(io::stderr()),
             external_command_policy: ExternalCommandPolicy::Strict,
         }
     }
@@ -334,5 +383,34 @@ mod tests {
         let env = ExecEnv::sandboxed(PathBuf::from("/tmp"));
         let s = format!("{env:?}");
         assert!(s.contains("ExecEnv"));
+        // Manual Debug impl renders the Write trait objects as a
+        // placeholder so the whole struct stays printable.
+        assert!(s.contains("<dyn Write>"));
+    }
+
+    #[test]
+    fn sandboxed_default_stdout_stderr_writers_accept_bytes() {
+        // The default writers point at process stdio. We cannot
+        // observe what they emit from a unit test, but we can
+        // verify `write_all` succeeds — a sanity check that the
+        // boxed trait object was constructed correctly. The bytes
+        // are sent to the test runner's stdio and discarded.
+        let mut env = ExecEnv::sandboxed(PathBuf::from("/tmp"));
+        env.stdout
+            .write_all(b"")
+            .expect("default stdout writer accepts an empty slice");
+        env.stderr
+            .write_all(b"")
+            .expect("default stderr writer accepts an empty slice");
+    }
+
+    #[test]
+    fn stdout_writer_can_be_replaced_post_construction() {
+        // The harness swaps the default writers with shared buffers;
+        // confirm the field is genuinely mutable, not pinned.
+        let mut env = ExecEnv::sandboxed(PathBuf::from("/tmp"));
+        let buf: Vec<u8> = Vec::new();
+        env.stdout = Box::new(buf);
+        env.stdout.write_all(b"hi").expect("custom writer accepts");
     }
 }

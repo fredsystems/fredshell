@@ -30,7 +30,7 @@
 use std::hint::black_box;
 
 use criterion::{Criterion, criterion_group, criterion_main};
-use fredshell_core::{ExecEnv, parse, run_source};
+use fredshell_core::{ExecEnv, ExternalCommandPolicy, parse, run_source};
 
 fn bench_parse_only(c: &mut Criterion) {
     c.bench_function("exec_roundtrip_parse_only", |b| {
@@ -42,6 +42,9 @@ fn bench_parse_and_exec(c: &mut Criterion) {
     c.bench_function("exec_roundtrip_parse_and_exec", |b| {
         b.iter(|| {
             let mut env = ExecEnv::sandboxed(std::env::temp_dir());
+            // PLAN_05 §4.2 made `sandboxed()` strict by default; this
+            // bench measures the v0 fallback-to-sh path explicitly.
+            env.external_command_policy = ExternalCommandPolicy::FallbackToSh;
             run_source(black_box("true"), &mut env).expect("run_source executes `true`");
         });
     });
