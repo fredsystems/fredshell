@@ -5,17 +5,20 @@
 
 //! `cargo xtask spec` subcommands.
 //!
-//! Currently exposes one subcommand:
+//! Exposes:
 //!
 //! * `versions` — verifies that the pinned reference toolchain
 //!   declared in `tests/spec/REFERENCE.md` matches what the nix
 //!   devshell is actually serving (via the `FREDSHELL_REFERENCE_*`
 //!   environment variables) and reports drift versus the floating
 //!   `nixpkgs` input as advisory output. See `PLAN_05` §4.5.
+//! * `record` — record sidecar fixtures (`<case>.stdout`,
+//!   `<case>.stderr`, `<case>.exit`) for a `.case.toml` by running
+//!   the case under the pinned reference bash. See `PLAN_05` §4.4 /
+//!   05.7.
 //!
-//! Future `PLAN_05` subtasks (05.6 / 05.7 / 05.8) will hang
-//! `compat`, `record`, and `lint` subcommands off the same `Spec`
-//! parent.
+//! Future `PLAN_05` subtasks (05.8) will hang `lint` off the same
+//! `Spec` parent.
 
 use std::env;
 use std::fs;
@@ -24,6 +27,10 @@ use std::path::Path;
 use clap::Subcommand;
 use color_eyre::eyre::{bail, Result};
 
+mod record;
+
+pub use record::RecordArgs;
+
 /// Subcommands under `cargo xtask spec`.
 #[derive(Subcommand)]
 pub enum SpecCmd {
@@ -31,19 +38,23 @@ pub enum SpecCmd {
     /// `tests/spec/REFERENCE.md` and report drift versus the
     /// floating `nixpkgs` input.
     Versions,
+    /// Record sidecar fixtures for a `.case.toml` by running the
+    /// case under the pinned reference bash (`PLAN_05` 05.7).
+    Record(RecordArgs),
 }
 
 /// Dispatch a `spec` subcommand.
 pub fn run(cmd: &SpecCmd) -> Result<()> {
     match cmd {
         SpecCmd::Versions => run_versions(),
+        SpecCmd::Record(args) => record::run(args),
     }
 }
 
 /// Path to the reference doc, resolved relative to the workspace
 /// root. `cargo xtask` is invoked from the workspace root so a
 /// relative path is sufficient and stable.
-const REFERENCE_DOC: &str = "tests/spec/REFERENCE.md";
+pub const REFERENCE_DOC: &str = "tests/spec/REFERENCE.md";
 
 /// Parsed pin from `tests/spec/REFERENCE.md` `[reference]` block.
 ///
