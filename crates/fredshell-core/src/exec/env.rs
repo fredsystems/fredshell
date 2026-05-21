@@ -37,28 +37,43 @@ pub(crate) static GLOBAL_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(
 ///
 /// Introduced by `PLAN_05` §4.2 ("strict execution mode"). v0's
 /// dispatcher is a stub: it handles a handful of builtins natively
-/// and shells out to `/bin/sh` for everything else. The binary REPL
-/// wants that fallback during the v0 → v1 transition so users have a
-/// working shell; the spec harness wants the *opposite*, because
-/// every fallback hides a missing feature behind bash and the harness
-/// exists to measure what fredshell-as-itself supports.
+/// and would historically have shelled out to `/bin/sh` for
+/// everything else. The spec harness has always run [`Strict`] so it
+/// measures fredshell-as-itself rather than fredshell-plus-bash;
+/// since the scream-test recalibration (see `Documents/decisions/`
+/// 0004 — strict-default execution), the binary REPL also defaults
+/// to [`Strict`]. Silent divergence from bash is exactly the class
+/// of bug strict-default eliminates: when fredshell cannot handle a
+/// command, the user hears about it immediately rather than having
+/// bash silently paper over the gap.
 ///
-/// `PLAN_06b` removes the policy field once native execve lands and
+/// An opt-in escape hatch is provided for interactive dogfooding
+/// while the native executor is incomplete — see
+/// [`ExecEnv::from_process`] for the `FREDSHELL_ALLOW_SH_FALLBACK`
+/// environment variable. The escape hatch is temporary and will be
+/// removed before v1.0.
+///
+/// `PLAN_06` removes the policy field once native execve lands and
 /// the fallback goes away. The enum will be retained (as a no-op for
-/// callers that name it explicitly) but the `Strict` variant becomes
-/// the only behavior.
+/// callers that name it explicitly) but the [`Strict`] variant
+/// becomes the only behavior.
+///
+/// [`Strict`]: ExternalCommandPolicy::Strict
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 #[non_exhaustive]
 pub enum ExternalCommandPolicy {
-    /// Fall back to `/bin/sh -c` for any non-builtin command. The
-    /// binary REPL's path; preserves the v0 shell-out behavior.
-    #[default]
-    FallbackToSh,
     /// Refuse to spawn `/bin/sh`. The dispatcher raises
     /// [`ExecError::NoExternalExecutor`](super::error::ExecError::NoExternalExecutor)
     /// for any command that is not a builtin handled natively.
-    /// The spec harness's path.
+    /// The default for both the binary REPL and the spec harness.
+    #[default]
     Strict,
+    /// Fall back to `/bin/sh -c` for any non-builtin command.
+    /// Opt-in only via the `FREDSHELL_ALLOW_SH_FALLBACK=1`
+    /// environment variable (see [`ExecEnv::from_process`]) or by
+    /// mutating [`ExecEnv::external_command_policy`] after
+    /// construction. Temporary; removed before v1.0.
+    FallbackToSh,
 }
 
 /// The environment a script executes in.
@@ -117,13 +132,13 @@ pub struct ExecEnv {
     /// Whether the dispatcher may shell out to `/bin/sh -c` for
     /// commands it cannot handle natively.
     ///
-    /// Defaults differ per constructor:
-    /// [`Self::from_process`] picks
-    /// [`ExternalCommandPolicy::FallbackToSh`] (the binary REPL's
-    /// path); [`Self::sandboxed`] picks
-    /// [`ExternalCommandPolicy::Strict`] (the spec harness's path).
-    /// Either default can be overridden by mutating this field after
-    /// construction.
+    /// Both constructors default to [`ExternalCommandPolicy::Strict`]
+    /// (see decision record `0004 — strict-default execution`).
+    /// [`Self::from_process`] additionally honours the
+    /// `FREDSHELL_ALLOW_SH_FALLBACK=1` environment variable as a
+    /// temporary escape hatch while the native executor is incomplete.
+    /// The field is `pub` so any host can override the default by
+    /// mutating it after construction.
     pub external_command_policy: ExternalCommandPolicy,
 }
 
@@ -151,8 +166,15 @@ impl ExecEnv {
     /// keys/values and preserves them verbatim.
     ///
     /// [`Self::external_command_policy`] defaults to
-    /// [`ExternalCommandPolicy::FallbackToSh`] so the binary REPL
-    /// keeps working during the v0 → v1 transition.
+    /// [`ExternalCommandPolicy::Strict`]. As a temporary escape hatch
+    /// while the native executor is incomplete, setting the
+    /// environment variable `FREDSHELL_ALLOW_SH_FALLBACK=1` (exact
+    /// match, à la `RUST_BACKTRACE=1`) selects
+    /// [`ExternalCommandPolicy::FallbackToSh`] instead. Any other
+    /// value — including empty, `0`, `true`, or unset — leaves the
+    /// policy at [`ExternalCommandPolicy::Strict`]. The escape hatch
+    /// is removed before v1.0; see decision record
+    /// `0004 — strict-default execution`.
     ///
     /// # Errors
     ///
@@ -161,19 +183,27 @@ impl ExecEnv {
     /// or the caller lacks permission to read it).
     pub fn from_process() -> Result<Self, ExecError> {
         let cwd = env::current_dir().map_err(ExecError::HostIo)?;
-        let env = env::vars_os()
+        let env: HashMap<String, String> = env::vars_os()
             .filter_map(|(k, v)| {
                 let key = k.into_string().ok()?;
                 let value = v.into_string().ok()?;
                 Some((key, value))
             })
             .collect();
+        let external_command_policy = if env
+            .get("FREDSHELL_ALLOW_SH_FALLBACK")
+            .is_some_and(|v| v == "1")
+        {
+            ExternalCommandPolicy::FallbackToSh
+        } else {
+            ExternalCommandPolicy::Strict
+        };
         Ok(Self {
             cwd,
             env,
             stdout: Box::new(io::stdout()),
             stderr: Box::new(io::stderr()),
-            external_command_policy: ExternalCommandPolicy::FallbackToSh,
+            external_command_policy,
         })
     }
 
@@ -187,9 +217,10 @@ impl ExecEnv {
     /// [`ExecEnv::env`] after construction).
     ///
     /// [`Self::external_command_policy`] defaults to
-    /// [`ExternalCommandPolicy::Strict`] so the harness measures
-    /// fredshell-as-itself rather than fredshell-plus-bash. Tests
-    /// that want to exercise the v0 fallback can flip the field to
+    /// [`ExternalCommandPolicy::Strict`]. Unlike [`Self::from_process`],
+    /// this constructor does not consult any environment variables —
+    /// hermeticity is the harness's whole point. Tests that want to
+    /// exercise the v0 `/bin/sh` fallback can flip the field to
     /// [`ExternalCommandPolicy::FallbackToSh`] after construction.
     ///
     /// [`Self::stdout`] and [`Self::stderr`] default to [`io::stdout`]
@@ -241,11 +272,12 @@ mod tests {
     }
 
     #[test]
-    fn external_command_policy_default_is_fallback() {
-        // The Default impl is the binary-REPL default. Constructors
-        // override it when they have a more specific default.
+    fn external_command_policy_default_is_strict() {
+        // Strict is the universal default since the scream-test
+        // recalibration (decision 0004). The Default impl reflects
+        // this; constructors do not weaken it.
         let policy = ExternalCommandPolicy::default();
-        assert_eq!(policy, ExternalCommandPolicy::FallbackToSh);
+        assert_eq!(policy, ExternalCommandPolicy::Strict);
     }
 
     #[test]
@@ -268,6 +300,15 @@ mod tests {
         let _guard = GLOBAL_ENV_LOCK
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
+        // Scrub the escape-hatch env var so this test asserts the
+        // documented default rather than whatever the developer
+        // happens to have exported in their shell.
+        let previous_fallback = env::var_os("FREDSHELL_ALLOW_SH_FALLBACK");
+        // SAFETY: serialized via GLOBAL_ENV_LOCK; we restore below.
+        unsafe {
+            env::remove_var("FREDSHELL_ALLOW_SH_FALLBACK");
+        }
+
         // Take a snapshot to compare against. `current_dir` is
         // process-global so this test cannot be parallelised against
         // a `set_current_dir` test.
@@ -275,11 +316,21 @@ mod tests {
         let env_var_count = env::vars_os().count();
 
         let exec = ExecEnv::from_process().expect("from_process succeeds when cwd is valid");
+
+        // Restore before asserting so a failure cannot poison other
+        // tests in the suite.
+        // SAFETY: serialized via GLOBAL_ENV_LOCK.
+        unsafe {
+            if let Some(v) = previous_fallback {
+                env::set_var("FREDSHELL_ALLOW_SH_FALLBACK", v);
+            }
+        }
+
         assert_eq!(exec.cwd, expected_cwd);
         assert_eq!(
             exec.external_command_policy,
-            ExternalCommandPolicy::FallbackToSh,
-            "from_process must default to FallbackToSh"
+            ExternalCommandPolicy::Strict,
+            "from_process must default to Strict when the escape-hatch env var is unset"
         );
 
         // Env map has at most the original count (non-UTF-8 entries
@@ -290,6 +341,90 @@ mod tests {
             !exec.env.is_empty(),
             "expected at least one UTF-8 env var in the test process"
         );
+    }
+
+    /// Helper: run `body` with `FREDSHELL_ALLOW_SH_FALLBACK` set to
+    /// `value` (or unset if `None`), restoring the previous value on
+    /// exit. Caller must hold [`GLOBAL_ENV_LOCK`].
+    fn with_fallback_env_var<R>(value: Option<&str>, body: impl FnOnce() -> R) -> R {
+        let previous = env::var_os("FREDSHELL_ALLOW_SH_FALLBACK");
+        // SAFETY: caller holds GLOBAL_ENV_LOCK; we restore on exit.
+        unsafe {
+            match value {
+                Some(v) => env::set_var("FREDSHELL_ALLOW_SH_FALLBACK", v),
+                None => env::remove_var("FREDSHELL_ALLOW_SH_FALLBACK"),
+            }
+        }
+        let out = body();
+        // SAFETY: caller holds GLOBAL_ENV_LOCK.
+        unsafe {
+            match previous {
+                Some(v) => env::set_var("FREDSHELL_ALLOW_SH_FALLBACK", v),
+                None => env::remove_var("FREDSHELL_ALLOW_SH_FALLBACK"),
+            }
+        }
+        out
+    }
+
+    #[test]
+    fn from_process_without_env_var_defaults_to_strict() {
+        let _guard = GLOBAL_ENV_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let policy = with_fallback_env_var(None, || {
+            ExecEnv::from_process()
+                .expect("from_process succeeds")
+                .external_command_policy
+        });
+        assert_eq!(policy, ExternalCommandPolicy::Strict);
+    }
+
+    #[test]
+    fn from_process_with_env_var_set_to_1_returns_fallback() {
+        let _guard = GLOBAL_ENV_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let policy = with_fallback_env_var(Some("1"), || {
+            ExecEnv::from_process()
+                .expect("from_process succeeds")
+                .external_command_policy
+        });
+        assert_eq!(policy, ExternalCommandPolicy::FallbackToSh);
+    }
+
+    #[test]
+    fn from_process_with_env_var_set_to_other_value_stays_strict() {
+        let _guard = GLOBAL_ENV_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        // Anything other than the exact string "1" is rejected.
+        // `true`, `yes`, `0`, `2`, mixed case — all leave the policy
+        // at Strict. This mirrors `RUST_BACKTRACE=1` semantics.
+        for value in ["0", "true", "yes", "TRUE", "01", " 1", "1 "] {
+            let policy = with_fallback_env_var(Some(value), || {
+                ExecEnv::from_process()
+                    .expect("from_process succeeds")
+                    .external_command_policy
+            });
+            assert_eq!(
+                policy,
+                ExternalCommandPolicy::Strict,
+                "value {value:?} must not engage the escape hatch"
+            );
+        }
+    }
+
+    #[test]
+    fn from_process_with_empty_env_var_stays_strict() {
+        let _guard = GLOBAL_ENV_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let policy = with_fallback_env_var(Some(""), || {
+            ExecEnv::from_process()
+                .expect("from_process succeeds")
+                .external_command_policy
+        });
+        assert_eq!(policy, ExternalCommandPolicy::Strict);
     }
 
     #[test]
