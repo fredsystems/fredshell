@@ -13,9 +13,11 @@
 //! `RunError`, `ExecError`, `ExitStatus`) lives in [`error`] and is
 //! re-exported from the crate root. See `PLAN_06a` §2 for the contract.
 
+pub mod builtin;
 pub mod env;
 pub mod error;
 
+pub use builtin::{Tier2Builtin, Tier2Ctx, Tier2Error};
 pub use env::ExecEnv;
 pub use error::{ExecError, ExitStatus, RunError, RunResult};
 

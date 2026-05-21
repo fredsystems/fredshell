@@ -21,6 +21,7 @@ pub mod parser;
 pub mod repl;
 pub mod tty;
 
+pub use exec::builtin::{Tier2Builtin, Tier2Ctx, Tier2Error};
 pub use exec::env::ExecEnv;
 pub use exec::error::{ExecError, ExitStatus, RunError, RunResult};
 pub use parser::{ParseError, ParseErrorKind, Script, parse};
