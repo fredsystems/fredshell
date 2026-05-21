@@ -13,3 +13,10 @@ workspace = true
 fredshell-ansi.workspace = true
 libc.workspace = true
 shell-words.workspace = true
+
+[dev-dependencies]
+criterion = { workspace = true }
+
+[[bench]]
+name = "exec_roundtrip"
+harness = false
