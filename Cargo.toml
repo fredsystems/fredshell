@@ -60,6 +60,7 @@ tracing-subscriber = { version = "=0.3.23", features = ["env-filter", "parking_l
 
 # Config / data
 serde = { version = "=1.0.228", features = ["derive"] }
+serde_json = "=1.0.149"
 toml = "=1.1.2"
 
 # Shell pieces
@@ -68,11 +69,13 @@ shell-words = "=1.1.1"
 # Internal crates
 fredshell-ansi = { version = "=0.1.0", path = "crates/fredshell-ansi" }
 fredshell-core = { version = "=0.1.0", path = "crates/fredshell-core" }
+fredshell-spec-runner = { version = "=0.1.0", path = "crates/fredshell-spec-runner" }
 
 # Terminal / OS
 libc = "=0.2.186"
 
 # xtask helpers
+base64 = "=0.22.1"
 duct = "=1.1.1"
 
 # Test helpers

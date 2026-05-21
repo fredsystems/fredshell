@@ -9,6 +9,7 @@
 //!   check     — cargo fmt --check, clippy, test, doc
 //!   pc        — pre-commit equivalent (invoked from the nix devshell)
 //!   coverage  — cargo llvm-cov producing lcov.info
+//!   compat    — bash-compat spec corpus driver (`PLAN_05` 05.6)
 //!   spec      — bash-compat spec harness subcommands (`PLAN_05`)
 //!   tty-probe — open a `TerminalSession` against the developer's real
 //!               controlling terminal and print the detected
@@ -21,6 +22,7 @@ use color_eyre::eyre::{bail, Result};
 use duct::cmd;
 use fredshell_core::tty::TerminalSession;
 
+mod compat;
 mod spec;
 
 #[derive(Parser)]
@@ -50,6 +52,9 @@ enum Cmd {
         #[command(subcommand)]
         cmd: spec::SpecCmd,
     },
+    /// Run the bash-compat spec corpus and emit a verdict report
+    /// (`PLAN_05` 05.6).
+    Compat(compat::CompatArgs),
 }
 
 fn main() -> Result<()> {
@@ -89,6 +94,9 @@ fn main() -> Result<()> {
         }
         Cmd::Spec { cmd } => {
             spec::run(&cmd)?;
+        }
+        Cmd::Compat(args) => {
+            compat::run(&args)?;
         }
     }
 
