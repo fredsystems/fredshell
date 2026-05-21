@@ -1116,8 +1116,9 @@ Every subtask runs the full verification suite per AGENTS.md:
 To be filled as subtasks complete, one row per subtask, format
 matching PLAN_06a §11.
 
-| Subtask | Commit | Date | Notes |
-| ------- | ------ | ---- | ----- |
+| Subtask | Commit | Date       | Notes                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| ------- | ------ | ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 05.1    | TBD    | 2026-05-21 | Added `ExternalCommandPolicy` enum (`FallbackToSh` default, `Strict`) and routed the dispatcher through it. `ExecEnv::from_process()` defaults to `FallbackToSh`; `ExecEnv::sandboxed()` defaults to `Strict`. New `ExecError::NoExternalExecutor { command, reason }` variant with `NoExternalExecutorReason::{PolicyStrict, UnparsableArgv}`. 12 new unit tests + 1 integration test cover the strict path; existing tests opt into `FallbackToSh` via the test helper. Workspace: 207 unit / 5 integration tests passing; clippy clean (one scoped `needless_pass_by_ref_mut` allow on `dispatch_line` with a forward-compat rationale for 05.2 / 06b mutations); machete clean. |
 
 ## 15. Cleanup registry
 

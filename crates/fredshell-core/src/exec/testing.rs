@@ -85,7 +85,15 @@ mod tests {
     use std::path::PathBuf;
 
     fn sandbox() -> ExecEnv {
-        ExecEnv::sandboxed(PathBuf::from("/tmp"))
+        // testing.rs's existing tests exercise the v0 fallback-to-sh
+        // surface (`echo`, redirections, etc.). 05.1 made sandboxed()
+        // default to Strict; 05.2 rewrites this module on top of the
+        // new ExecEnv shape and these tests get redesigned then.
+        // Until then, opt back into fallback so the existing assertions
+        // continue to measure what 06a actually does.
+        let mut env = ExecEnv::sandboxed(PathBuf::from("/tmp"));
+        env.external_command_policy = crate::exec::ExternalCommandPolicy::FallbackToSh;
+        env
     }
 
     /// Any test that spawns `/bin/sh` must serialise with the

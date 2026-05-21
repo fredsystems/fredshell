@@ -30,8 +30,8 @@ pub mod error;
 pub(crate) mod testing;
 
 pub use builtin::{Tier2Builtin, Tier2Ctx, Tier2Error};
-pub use env::ExecEnv;
-pub use error::{ExecError, ExitStatus, RunError, RunResult};
+pub use env::{ExecEnv, ExternalCommandPolicy};
+pub use error::{ExecError, ExitStatus, NoExternalExecutorReason, RunError, RunResult};
 
 use std::process::{Command, Stdio};
 
@@ -185,9 +185,21 @@ pub(crate) enum Capture<'a> {
 }
 
 /// Execute one line: builtin lookup first, fall back to `/bin/sh -c`.
+///
+/// The fallback step is governed by [`ExecEnv::external_command_policy`]
+/// (introduced by `PLAN_05` §4.2). When the policy is
+/// [`ExternalCommandPolicy::Strict`] the dispatcher refuses to spawn
+/// `/bin/sh` and surfaces [`ExecError::NoExternalExecutor`] instead.
+///
+/// The `&mut ExecEnv` is read-only at the dispatcher layer in v0;
+/// `PLAN_05` 05.2 mutates it for stdio capture and `PLAN_06b` mutates
+/// it for the `export` builtin. Keeping the signature aligned with
+/// the public `run_source` / `run_script` signature avoids churn at
+/// every layer above when those mutations land.
+#[allow(clippy::needless_pass_by_ref_mut)]
 fn dispatch_line(
     line: &str,
-    _env: &mut ExecEnv,
+    env: &mut ExecEnv,
     capture: &mut Capture<'_>,
 ) -> Result<LineOutcome, RunError> {
     // Tokenise for builtin dispatch only. The full line is handed
@@ -196,17 +208,38 @@ fn dispatch_line(
     let argv: Vec<String> = match shell_words::split(line) {
         Ok(v) => v,
         Err(_) => {
-            // Tokeniser failed (e.g. unterminated quote). v0 hands
-            // it straight to /bin/sh so its error reporting is
-            // authoritative; PLAN_06b reports via ParseError.
-            return spawn_via_sh(line, capture).map(LineOutcome::Continue);
+            // Tokeniser failed (e.g. unterminated quote). In
+            // FallbackToSh mode v0 hands it straight to `/bin/sh`
+            // so its error reporting is authoritative; in Strict
+            // mode the executor refuses with UnparsableArgv.
+            // PLAN_06b reports the parse failure via ParseError
+            // and the carve-out goes away.
+            return match env.external_command_policy {
+                ExternalCommandPolicy::FallbackToSh => {
+                    spawn_via_sh(line, capture).map(LineOutcome::Continue)
+                }
+                ExternalCommandPolicy::Strict => {
+                    Err(RunError::Exec(ExecError::NoExternalExecutor {
+                        command: line.to_owned(),
+                        reason: NoExternalExecutorReason::UnparsableArgv,
+                    }))
+                }
+            };
         }
     };
 
     match builtins::try_run(&argv).map_err(|e| RunError::Exec(core_error_to_exec(e)))? {
         Some(BuiltinOutcome::Exit(code)) => Ok(LineOutcome::Exit(ExitStatus(code))),
         Some(BuiltinOutcome::Handled(code)) => Ok(LineOutcome::Continue(ExitStatus(code))),
-        None => spawn_via_sh(line, capture).map(LineOutcome::Continue),
+        None => match env.external_command_policy {
+            ExternalCommandPolicy::FallbackToSh => {
+                spawn_via_sh(line, capture).map(LineOutcome::Continue)
+            }
+            ExternalCommandPolicy::Strict => Err(RunError::Exec(ExecError::NoExternalExecutor {
+                command: line.to_owned(),
+                reason: NoExternalExecutorReason::PolicyStrict,
+            })),
+        },
     }
 }
 
@@ -269,7 +302,13 @@ mod tests {
     use std::path::PathBuf;
 
     fn sandbox() -> ExecEnv {
-        ExecEnv::sandboxed(PathBuf::from("/tmp"))
+        // The dispatcher tests below were written before strict mode
+        // existed; they assert the v0 fallback-to-sh behavior. Opt
+        // back into fallback so they keep exercising that surface.
+        // Tests that want strict construct their env inline.
+        let mut env = ExecEnv::sandboxed(PathBuf::from("/tmp"));
+        env.external_command_policy = ExternalCommandPolicy::FallbackToSh;
+        env
     }
 
     /// Serialise any test that spawns `/bin/sh` or mutates
@@ -492,5 +531,101 @@ mod tests {
             }
             other => panic!("expected InternalInvariant, got {other:?}"),
         }
+    }
+
+    // --- PLAN_05 §4.2 strict execution mode ----------------------
+
+    /// Build a strict-mode sandbox: refuses any external command.
+    fn strict_sandbox() -> ExecEnv {
+        let env = ExecEnv::sandboxed(PathBuf::from("/tmp"));
+        // Sanity-check the default; if `sandboxed()`'s default
+        // changes, the rest of these tests will silently lose their
+        // meaning.
+        assert_eq!(env.external_command_policy, ExternalCommandPolicy::Strict);
+        env
+    }
+
+    #[test]
+    fn strict_mode_refuses_external_command() {
+        let _g = lock();
+        let mut env = strict_sandbox();
+        let err = run_source("/bin/echo hi\n", &mut env)
+            .expect_err("strict must refuse external command");
+        match err {
+            RunError::Exec(ExecError::NoExternalExecutor { command, reason }) => {
+                assert_eq!(command, "/bin/echo hi");
+                assert_eq!(reason, NoExternalExecutorReason::PolicyStrict);
+            }
+            other => panic!("expected NoExternalExecutor, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn strict_mode_refuses_unknown_command_with_policy_strict_reason() {
+        let _g = lock();
+        let mut env = strict_sandbox();
+        let err = run_source("definitely-not-a-real-command-fredshell-strict\n", &mut env)
+            .expect_err("strict must refuse");
+        match err {
+            RunError::Exec(ExecError::NoExternalExecutor { command, reason }) => {
+                assert_eq!(command, "definitely-not-a-real-command-fredshell-strict");
+                assert_eq!(reason, NoExternalExecutorReason::PolicyStrict);
+            }
+            other => panic!("expected NoExternalExecutor, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn strict_mode_refuses_unparsable_argv_with_unparsable_reason() {
+        let _g = lock();
+        let mut env = strict_sandbox();
+        let err = run_source("echo 'unterminated\n", &mut env)
+            .expect_err("strict must refuse unparsable argv");
+        match err {
+            RunError::Exec(ExecError::NoExternalExecutor { command, reason }) => {
+                assert_eq!(command, "echo 'unterminated");
+                assert_eq!(reason, NoExternalExecutorReason::UnparsableArgv);
+            }
+            other => panic!("expected NoExternalExecutor(UnparsableArgv), got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn strict_mode_still_runs_builtins() {
+        // `exit` is a native builtin and must not be affected by
+        // strict mode.
+        let _g = lock();
+        let mut env = strict_sandbox();
+        let r = run_source("exit 7\n", &mut env).expect("builtin runs under strict");
+        assert_eq!(r.status, ExitStatus(7));
+        assert!(r.exit_requested);
+    }
+
+    #[test]
+    fn strict_mode_aborts_on_first_external_command() {
+        // The script has a builtin then an external; the dispatcher
+        // must run the builtin and then fail on the external rather
+        // than silently skipping.
+        let _g = lock();
+        let mut env = strict_sandbox();
+        let err = run_source("cd /tmp\ntrue\n", &mut env)
+            .expect_err("strict refuses external after builtin");
+        match err {
+            RunError::Exec(ExecError::NoExternalExecutor { command, .. }) => {
+                assert_eq!(command, "true");
+            }
+            other => panic!("expected NoExternalExecutor on `true`, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn fallback_mode_still_falls_back() {
+        // Belt-and-braces: when the policy is explicitly
+        // FallbackToSh, external commands still spawn /bin/sh.
+        let _g = lock();
+        let mut env = ExecEnv::sandboxed(PathBuf::from("/tmp"));
+        env.external_command_policy = ExternalCommandPolicy::FallbackToSh;
+        let r = run_source("true\n", &mut env).expect("fallback path runs `true`");
+        assert_eq!(r.status, ExitStatus::SUCCESS);
     }
 }

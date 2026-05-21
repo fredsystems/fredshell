@@ -30,6 +30,35 @@ use super::error::ExecError;
 #[cfg(test)]
 pub(crate) static GLOBAL_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
+/// Whether the dispatcher may fall back to `/bin/sh -c` for commands
+/// the native executor does not yet handle.
+///
+/// Introduced by `PLAN_05` §4.2 ("strict execution mode"). v0's
+/// dispatcher is a stub: it handles a handful of builtins natively
+/// and shells out to `/bin/sh` for everything else. The binary REPL
+/// wants that fallback during the v0 → v1 transition so users have a
+/// working shell; the spec harness wants the *opposite*, because
+/// every fallback hides a missing feature behind bash and the harness
+/// exists to measure what fredshell-as-itself supports.
+///
+/// `PLAN_06b` removes the policy field once native execve lands and
+/// the fallback goes away. The enum will be retained (as a no-op for
+/// callers that name it explicitly) but the `Strict` variant becomes
+/// the only behavior.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[non_exhaustive]
+pub enum ExternalCommandPolicy {
+    /// Fall back to `/bin/sh -c` for any non-builtin command. The
+    /// binary REPL's path; preserves the v0 shell-out behavior.
+    #[default]
+    FallbackToSh,
+    /// Refuse to spawn `/bin/sh`. The dispatcher raises
+    /// [`ExecError::NoExternalExecutor`](super::error::ExecError::NoExternalExecutor)
+    /// for any command that is not a builtin handled natively.
+    /// The spec harness's path.
+    Strict,
+}
+
 /// The environment a script executes in.
 ///
 /// Constructed by the host (binary or harness) and passed by mutable
@@ -58,6 +87,18 @@ pub struct ExecEnv {
     /// [`Self::from_process`] (see that constructor's docs). `PLAN_06b`
     /// migrates to `HashMap<OsString, OsString>` per `PLAN_02` §4.2.
     pub env: HashMap<String, String>,
+
+    /// Whether the dispatcher may shell out to `/bin/sh -c` for
+    /// commands it cannot handle natively.
+    ///
+    /// Defaults differ per constructor:
+    /// [`Self::from_process`] picks
+    /// [`ExternalCommandPolicy::FallbackToSh`] (the binary REPL's
+    /// path); [`Self::sandboxed`] picks
+    /// [`ExternalCommandPolicy::Strict`] (the spec harness's path).
+    /// Either default can be overridden by mutating this field after
+    /// construction.
+    pub external_command_policy: ExternalCommandPolicy,
 }
 
 impl ExecEnv {
@@ -67,6 +108,10 @@ impl ExecEnv {
     /// from [`std::env::vars_os`]. Non-UTF-8 variables are dropped
     /// silently in v0; `PLAN_06b` migrates the env map to `OsString`
     /// keys/values and preserves them verbatim.
+    ///
+    /// [`Self::external_command_policy`] defaults to
+    /// [`ExternalCommandPolicy::FallbackToSh`] so the binary REPL
+    /// keeps working during the v0 → v1 transition.
     ///
     /// # Errors
     ///
@@ -82,7 +127,11 @@ impl ExecEnv {
                 Some((key, value))
             })
             .collect();
-        Ok(Self { cwd, env })
+        Ok(Self {
+            cwd,
+            env,
+            external_command_policy: ExternalCommandPolicy::FallbackToSh,
+        })
     }
 
     /// Construct an empty [`ExecEnv`] rooted at `cwd` with no
@@ -93,11 +142,18 @@ impl ExecEnv {
     /// script. The harness is responsible for setting any variables
     /// the test requires (typically by mutating
     /// [`ExecEnv::env`] after construction).
+    ///
+    /// [`Self::external_command_policy`] defaults to
+    /// [`ExternalCommandPolicy::Strict`] so the harness measures
+    /// fredshell-as-itself rather than fredshell-plus-bash. Tests
+    /// that want to exercise the v0 fallback can flip the field to
+    /// [`ExternalCommandPolicy::FallbackToSh`] after construction.
     #[must_use]
     pub fn sandboxed(cwd: PathBuf) -> Self {
         Self {
             cwd,
             env: HashMap::new(),
+            external_command_policy: ExternalCommandPolicy::Strict,
         }
     }
 }
@@ -117,6 +173,30 @@ mod tests {
         let env = ExecEnv::sandboxed(cwd.clone());
         assert_eq!(env.cwd, cwd);
         assert!(env.env.is_empty());
+    }
+
+    #[test]
+    fn sandboxed_defaults_to_strict_external_command_policy() {
+        let env = ExecEnv::sandboxed(PathBuf::from("/tmp"));
+        assert_eq!(env.external_command_policy, ExternalCommandPolicy::Strict);
+    }
+
+    #[test]
+    fn external_command_policy_is_mutable_post_construction() {
+        let mut env = ExecEnv::sandboxed(PathBuf::from("/tmp"));
+        env.external_command_policy = ExternalCommandPolicy::FallbackToSh;
+        assert_eq!(
+            env.external_command_policy,
+            ExternalCommandPolicy::FallbackToSh
+        );
+    }
+
+    #[test]
+    fn external_command_policy_default_is_fallback() {
+        // The Default impl is the binary-REPL default. Constructors
+        // override it when they have a more specific default.
+        let policy = ExternalCommandPolicy::default();
+        assert_eq!(policy, ExternalCommandPolicy::FallbackToSh);
     }
 
     #[test]
@@ -147,6 +227,11 @@ mod tests {
 
         let exec = ExecEnv::from_process().expect("from_process succeeds when cwd is valid");
         assert_eq!(exec.cwd, expected_cwd);
+        assert_eq!(
+            exec.external_command_policy,
+            ExternalCommandPolicy::FallbackToSh,
+            "from_process must default to FallbackToSh"
+        );
 
         // Env map has at most the original count (non-UTF-8 entries
         // are dropped) and at least one entry — every reasonable test
