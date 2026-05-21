@@ -8,13 +8,7 @@ members = [
   "crates/fredshell-spec-runner",
   "xtask",
 ]
-default-members = [
-  "crates/fredshell",
-  "crates/fredshell-ansi",
-  "crates/fredshell-core",
-  "crates/fredshell-prompt",
-  "crates/fredshell-spec-runner",
-]
+default-members = ["crates/fredshell"]
 
 [workspace.package]
 version = "0.1.0"
