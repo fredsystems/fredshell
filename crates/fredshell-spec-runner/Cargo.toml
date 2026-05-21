@@ -1,0 +1,23 @@
+[package]
+name = "fredshell-spec-runner"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Spec-corpus harness for fredshell (PLAN_05 L3 layer)"
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "fredshell-spec-runner"
+path = "src/main.rs"
+
+[dependencies]
+clap = { workspace = true }
+fredshell-core = { workspace = true }
+serde = { workspace = true }
+tempfile = { workspace = true }
+toml = { workspace = true }
+
+[dev-dependencies]

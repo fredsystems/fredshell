@@ -1,0 +1,4 @@
+description = "`exit 0` returns exit status 0 and produces no output"
+script = "exit 0\n"
+status = "pass"
+tags = ["builtin", "exit", "smoke"]

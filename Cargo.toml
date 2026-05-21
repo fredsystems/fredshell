@@ -5,6 +5,7 @@ members = [
   "crates/fredshell-ansi",
   "crates/fredshell-core",
   "crates/fredshell-prompt",
+  "crates/fredshell-spec-runner",
   "xtask",
 ]
 default-members = [
@@ -12,6 +13,7 @@ default-members = [
   "crates/fredshell-ansi",
   "crates/fredshell-core",
   "crates/fredshell-prompt",
+  "crates/fredshell-spec-runner",
 ]
 
 [workspace.package]
@@ -58,12 +60,14 @@ tracing-subscriber = { version = "=0.3.23", features = ["env-filter", "parking_l
 
 # Config / data
 serde = { version = "=1.0.228", features = ["derive"] }
+toml = "=1.1.2"
 
 # Shell pieces
 shell-words = "=1.1.1"
 
 # Internal crates
 fredshell-ansi = { version = "=0.1.0", path = "crates/fredshell-ansi" }
+fredshell-core = { version = "=0.1.0", path = "crates/fredshell-core" }
 
 # Terminal / OS
 libc = "=0.2.186"
