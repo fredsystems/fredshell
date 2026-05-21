@@ -28,7 +28,6 @@
 
 use std::io::{Read, Write};
 
-use crate::builtins::{self, BuiltinOutcome};
 use crate::tty::{OpenError, Signal, TerminalSession, TtyInput, TtyOutput, WaitEvent};
 use crate::{CoreError, CoreResult, exec};
 
@@ -83,37 +82,48 @@ fn write_prompt(session: &TerminalSession) {
     }
 }
 
-/// Dispatch one assembled command line through the builtin
-/// registry, falling back to `/bin/sh -c` for non-builtins. Shared
-/// between the raw-mode and cooked-mode loops so feature parity is
-/// guaranteed.
+/// Dispatch one assembled command line through the execution
+/// pipeline. Shared between the raw-mode and cooked-mode loops so
+/// feature parity is guaranteed.
 ///
-/// `Some(BuiltinOutcome::Exit(code))` short-circuits the process via
-/// `std::process::exit` exactly like the pre-04.10 cooked loop.
-fn dispatch_line(line: &str) -> CoreResult<()> {
-    let trimmed = line.trim();
-    if trimmed.is_empty() {
-        return Ok(());
-    }
-
-    let argv: Vec<String> = match shell_words::split(trimmed) {
-        Ok(v) => v,
+/// Calls [`exec::run_source`] with a fresh [`exec::ExecEnv`] (the
+/// per-line construction cost is one `current_dir` syscall and one
+/// `vars_os` walk — well inside the `PLAN_06a` §9 budget; `PLAN_06b`
+/// hoists the env into `ShellState` and reuses it). When the
+/// returned [`exec::RunResult`] carries `exit_requested = true`
+/// (the user typed the `exit` builtin), the process terminates via
+/// [`std::process::exit`] with the requested status, matching the
+/// pre-`PLAN_06a` cooked-loop behaviour. A [`exec::RunError`] is
+/// reported to stderr and the loop continues.
+///
+/// Empty / whitespace-only lines are handled by the dispatcher
+/// itself (see `PLAN_06a` §3), so this function does not pre-trim.
+///
+/// Infallible from the caller's perspective: any error encountered
+/// is written to stderr and the loop carries on. The interactive
+/// REPL must not abort on a single bad line.
+fn dispatch_line(line: &str) {
+    let mut env = match exec::ExecEnv::from_process() {
+        Ok(env) => env,
         Err(e) => {
-            eprintln!("fredshell: parse error: {e}");
-            return Ok(());
+            eprintln!("fredshell: cannot construct exec env: {e}");
+            return;
         }
     };
 
-    match builtins::try_run(&argv)? {
-        Some(BuiltinOutcome::Exit(code)) => std::process::exit(code),
-        Some(BuiltinOutcome::Handled(_)) => {}
-        None => {
-            if let Err(e) = exec::run_via_sh(trimmed) {
-                eprintln!("fredshell: {e}");
+    match exec::run_source(line, &mut env) {
+        Ok(result) => {
+            if result.exit_requested {
+                std::process::exit(result.status.0);
             }
+            // PLAN_06b will store result.status in ShellState as $?;
+            // for v0 we discard it after the line. The harness uses
+            // its own code path and does not need this side channel.
+        }
+        Err(e) => {
+            eprintln!("fredshell: {e}");
         }
     }
-    Ok(())
 }
 
 /// Run the byte-pump loop using the session's tty + signal fds.
@@ -148,9 +158,8 @@ fn drive_raw_loop_session(
                         let line = String::from_utf8_lossy(&line_buf).into_owned();
                         line_buf.clear();
                         session.leave_raw_mode();
-                        let dispatch_result = dispatch_line(&line);
+                        dispatch_line(&line);
                         session.enter_raw_mode().map_err(CoreError::RawMode)?;
-                        dispatch_result?;
                         write_prompt(session);
                     }
                     InputOutcome::Interrupted => {
@@ -345,7 +354,7 @@ fn run_cooked(_opts: &Options) -> CoreResult<()> {
             break;
         }
 
-        dispatch_line(&line)?;
+        dispatch_line(&line);
     }
 
     Ok(())

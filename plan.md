@@ -1,8 +1,7 @@
 # fredshell — Master Plan
 
-> Last updated: 2026-05-20 — PLAN_04 (terminal I/O, signals, capabilities)
-> implementation complete on task-04/terminal-io. Status flipped to
-> `implemented`.
+> Last updated: 2026-05-21 — PLAN_06a marked implemented (Phase A
+> execution pipeline skeleton landed); PLAN_06b remains stub-pending.
 
 This is the top-level index of fredshell's planning documents. Read this first.
 The actual design lives in the per-area `PLAN_XX_*.md` documents and the ADRs in
@@ -60,21 +59,22 @@ Two foundational decisions shape everything else and are recorded as ADRs:
 
 ## Planning documents
 
-| #   | Document                               | Phase | Status        | Summary                                                                                               |
-| --- | -------------------------------------- | ----- | ------------- | ----------------------------------------------------------------------------------------------------- |
-| 01  | `Documents/PLAN_01_philosophy.md`      | A     | draft         | Goals, non-goals, target user, success criteria.                                                      |
-| 02  | `Documents/PLAN_02_architecture.md`    | A     | draft         | Crate layout, module boundaries, key traits, dependency direction.                                    |
-| 03  | `Documents/PLAN_03_ansi.md`            | A     | implemented   | `fredshell-ansi` crate: encoder API, minimal decoder, `Write`-based contract, allocation budget.      |
-| 04  | `Documents/PLAN_04_terminal_io.md`     | A     | implemented   | Raw mode discipline, signals, process groups, terminal feature detection, kitty keyboard negotiation. |
-| 05  | `Documents/PLAN_05_testing.md`         | A     | draft         | Spec-test harness, corpus methodology, oils-spec integration, real-world script corpus, CI metrics.   |
-| 06  | `Documents/PLAN_06_bash_compat.md`     | B     | stub pending  | Native parser strategy, brush-parser evaluation, POSIX-behavior scope, phasing. Corpus-dependent.     |
-| 07  | `Documents/PLAN_07_interactive_ux.md`  | A     | draft         | Line editor, key-byte decoder, history, completion, fuzzy search, keybindings, syntax highlighting.   |
-| 08  | `Documents/PLAN_08_prompt.md`          | A     | draft         | Starship-style prompt renderer, configuration model, performance budget.                              |
-| 09  | `Documents/PLAN_09_builtins.md`        | B     | stub pending  | Builtin inventory by tier, dispatch model, parity targets, override semantics. Corpus-dependent.      |
-| 10  | `Documents/PLAN_10_config.md`          | A     | draft pending | Config file format, layering, env vars, rc-file semantics.                                            |
-| 11  | `Documents/PLAN_11_nix_integration.md` | A     | draft pending | Home-manager module surface, flake outputs, default-shell story.                                      |
-| 12  | `Documents/PLAN_12_ai_features.md`     | A     | draft pending | NL→command, error explanation, provider abstraction, privacy boundaries.                              |
-| 13  | `Documents/PLAN_13_milestones.md`      | B     | stub pending  | Phased roadmap: MVP → daily-driver → bash-replacement. Corpus-dependent.                              |
+| #   | Document                               | Phase | Status        | Summary                                                                                                                                                 |
+| --- | -------------------------------------- | ----- | ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 01  | `Documents/PLAN_01_philosophy.md`      | A     | draft         | Goals, non-goals, target user, success criteria.                                                                                                        |
+| 02  | `Documents/PLAN_02_architecture.md`    | A     | draft         | Crate layout, module boundaries, key traits, dependency direction.                                                                                      |
+| 03  | `Documents/PLAN_03_ansi.md`            | A     | implemented   | `fredshell-ansi` crate: encoder API, minimal decoder, `Write`-based contract, allocation budget.                                                        |
+| 04  | `Documents/PLAN_04_terminal_io.md`     | A     | implemented   | Raw mode discipline, signals, process groups, terminal feature detection, kitty keyboard negotiation.                                                   |
+| 05  | `Documents/PLAN_05_testing.md`         | A     | draft         | Spec-test harness, corpus methodology, oils-spec integration, real-world script corpus, CI metrics.                                                     |
+| 06a | `Documents/PLAN_06a_exec_skeleton.md`  | A     | implemented   | Execution-pipeline public surface: `parse`, `run_source`, `ExecEnv`, `RunResult`, `ExecError`, `Tier2Builtin`. Stub impl wraps today's `dispatch_line`. |
+| 06b | `Documents/PLAN_06b_exec_semantics.md` | B     | stub pending  | Native parser strategy, brush-parser evaluation, POSIX-behavior scope, pipelines/redirections/job control. Corpus-dependent.                            |
+| 07  | `Documents/PLAN_07_interactive_ux.md`  | A     | draft         | Line editor, key-byte decoder, history, completion, fuzzy search, keybindings, syntax highlighting.                                                     |
+| 08  | `Documents/PLAN_08_prompt.md`          | A     | draft         | Starship-style prompt renderer, configuration model, performance budget.                                                                                |
+| 09  | `Documents/PLAN_09_builtins.md`        | B     | stub pending  | Builtin inventory by tier, dispatch model, parity targets, override semantics. Corpus-dependent.                                                        |
+| 10  | `Documents/PLAN_10_config.md`          | A     | draft pending | Config file format, layering, env vars, rc-file semantics.                                                                                              |
+| 11  | `Documents/PLAN_11_nix_integration.md` | A     | draft pending | Home-manager module surface, flake outputs, default-shell story.                                                                                        |
+| 12  | `Documents/PLAN_12_ai_features.md`     | A     | draft pending | NL→command, error explanation, provider abstraction, privacy boundaries.                                                                                |
+| 13  | `Documents/PLAN_13_milestones.md`      | B     | stub pending  | Phased roadmap: MVP → daily-driver → bash-replacement. Corpus-dependent.                                                                                |
 
 ### Two-phase planning
 
@@ -90,11 +90,12 @@ Planning proceeds in two phases:
   sandboxable execution environment, clean batch-mode entry point).
 
 - **Phase B** drafts the docs whose content is informed by the spec corpus
-  once it exists: bash compatibility (PLAN_06), tier-2 builtin inventory
-  and priority (PLAN_09), and the implementation roadmap (PLAN_13). These
-  carry "stub pending" status during Phase A and receive full drafts only
-  after the v1 corpus has been curated and the harness reports a baseline
-  pass-rate.
+  once it exists: bash-execution semantics (PLAN_06b), tier-2 builtin
+  inventory and priority (PLAN_09), and the implementation roadmap
+  (PLAN_13). These carry "stub pending" status during Phase A and
+  receive full drafts only after the v1 corpus has been curated and
+  the harness reports a baseline pass-rate. PLAN_06a is Phase A: it
+  ships the public surface those Phase B docs build on.
 
 The rationale and methodology are pinned in ADR 0003.
 
@@ -125,7 +126,7 @@ These are unresolved as of this draft and will be addressed by the relevant
 planning document or ADR:
 
 - Choice of native bash parser: adopt `brush-parser`, fork, or write our own
-  (deferred to `PLAN_06`).
+  (deferred to `PLAN_06b`).
 - Line-editor library: build on `reedline`/`rustyline`, or roll our own on top
   of `crossterm`/`termwiz` (deferred to `PLAN_07`).
 - Async runtime: required for AI features and background jobs, optional

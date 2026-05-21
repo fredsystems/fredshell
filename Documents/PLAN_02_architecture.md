@@ -1,6 +1,8 @@
 # PLAN_02 — Architecture
 
-> Last updated: 2026-05-20 — first draft.
+> Last updated: 2026-05-21 — §12 refreshed for PLAN_06a (Phase A
+> execution-pipeline skeleton implemented; §4.1/§4.2/§4.3/§4.5
+> surfaces and §9 bench scaffolding moved to Implemented).
 > Phase: A. Status: draft.
 
 This document defines fredshell's crate layout, module boundaries, key
@@ -103,7 +105,7 @@ prompt needs git + language detection). They are both consumed by the
 | App   | `fredshell-line-editor` | Key decoding, line buffer, history view, completion plumbing   | no         | no     | no      |
 | App   | `fredshell-prompt`      | Starship-style segment renderer with async slow segments       | no         | yes    | yes     |
 | Lib   | `fredshell-core`        | Parser, executor, `ExecEnv`, tier-1 + tier-2 builtin dispatch  | no         | no     | yes     |
-| Lib   | `fredshell-ansi`        | Encoder-focused ANSI escape-sequence library (ADR 0002)        | no         | no     | no      |
+| Lib   | `fredshell-ansi`        | Encoder-focused ANSI escape-sequence library (ADR 0002)        | no         | no     | yes     |
 | Test  | `fredshell-spec-runner` | Spec corpus runner (PLAN_05); depends only on `fredshell-core` | yes (test) | no     | no      |
 | Dev   | `xtask`                 | Build/CI orchestration; compat + spec record commands          | yes        | no     | yes     |
 
@@ -642,6 +644,107 @@ These belong to other docs and are not re-litigated here:
   primary owner of process-group state or whether the binary owns
   the tty side and the core owns the bookkeeping side is open.
   PLAN_04 and PLAN_06 jointly own.
+
+## 12. Implementation status
+
+This section tracks which parts of the architecture have backing code
+and which are still specification-only. It is updated whenever a
+PLAN_NN document flips status.
+
+### Implemented
+
+- **`fredshell-ansi`** (PLAN_03 — implemented). Encoder-focused crate,
+  minimal decoder (DA1, DSR, kitty, DECRPM). Allocation budget met.
+- **`fredshell-core::tty`** (PLAN_04 — implemented). Terminal I/O,
+  signals, capability detection, raw-mode RAII, pselect multiplexer,
+  process-group plumbing. Backs §6.1.1 (signal handlers installed,
+  foreground pgid routing), §6.1.2 (`pselect` multiplex of tty +
+  self-pipe), §6.1.3 (the cancellation `AtomicBool` exists as
+  `CancellationToken`, exposed by `TerminalSession`).
+- **`fredshell-core::repl`** (PLAN_04 04.10 — implemented). REPL on
+  top of `TerminalSession`; raw-mode byte-pump with cooked-stdin
+  fallback; dispatches each line through `exec::run_source` (PLAN_06a
+  06.6).
+- **§4.1 Parser surface** (PLAN_06a — surface only). `parse`,
+  `Script`, `ParseError`, `ParseErrorKind` exist as a stub: the v0
+  parser stores the source string verbatim and rejects NUL bytes.
+  Real tokenisation, AST, and `ParseErrorKind` variants land with
+  PLAN_06b.
+- **§4.2 `ExecEnv`** (PLAN_06a — surface only). `ExecEnv` exists
+  with `from_process` and `sandboxed` constructors and v0 fields
+  (`cwd`, `env: HashMap<String, String>`, `last_status`). Tier-2
+  builtin registry and full `ShellState` fields land with PLAN_06b
+  and PLAN_09.
+- **§4.3 Executor surface** (PLAN_06a — surface only). `run_source`,
+  `run_script`, `RunResult { status, exit_requested }`, `RunError`,
+  `ExecError`, `ExitStatus` exist. The v0 dispatcher walks lines,
+  routes Tier-1 builtins through `builtins::try_run`, and falls back
+  to `/bin/sh -c <line>` for everything else. Real executor lands
+  with PLAN_06b.
+- **§4.5 Tier-2 trait surface** (PLAN_06a — surface only).
+  `Tier2Builtin` (object-safe, `Send + Sync`), `Tier2Ctx<'a>`, and
+  `Tier2Error` exist with a compile-time object-safety check. No
+  impls; no registry; dispatch lands with PLAN_09.
+- **§9 Bench scaffolding** (PLAN_06a — surface only).
+  `crates/fredshell-core/benches/exec_roundtrip.rs` exists with
+  `parse_only` and `parse_and_exec` Criterion benches, seeding the
+  performance budget tracker. Baseline numbers recorded in
+  PLAN_06a §11 row 06a.7. Real budget enforcement lands with
+  PLAN_06b.
+- **`fredshell`** (binary, scaffold). Wires `TerminalSession` and
+  the REPL; installs `SIGQUIT=SIG_IGN`. Argv / one-shot mode work.
+
+### Specification-only (waiting for implementation)
+
+- **§4.1 Parser semantics**. The v0 parser does not tokenise; it
+  stores the source string verbatim. Real lexer, AST, and
+  POSIX-grammar coverage land with PLAN_06b.
+- **§4.2 `ExecEnv` semantics**. `ExecEnv` does not yet carry
+  functions, aliases, shell options, or a job table. Real
+  `ShellState` lands with PLAN_06b; Tier-2 registry with PLAN_09.
+- **§4.3 Executor semantics**. The v0 dispatcher delegates external
+  commands to `/bin/sh -c`. Real fork/exec, pipelines, redirections,
+  and job control land with PLAN_06b.
+- **§4.4 Tier-1 builtins**. Only `cd`, `exit`, and a few stubs exist
+  in `fredshell-core::builtins`. Full POSIX set lands incrementally
+  across PLAN_06b and PLAN_09.
+- **§4.5 Tier-2 builtin impls**. The trait exists; no builtins
+  implement it yet. Inventory and dispatch land with PLAN_09.
+- **§4.6 Dispatch order**. Today's `dispatch_line` does
+  builtin-then-fallback-to-/bin/sh. The full alias → function →
+  tier-1 → tier-2 → external order lands with PLAN_06b.
+- **§6.1.4 Timeouts** (`setitimer` + `SIGALRM`). PLAN_04 catches
+  `SIGALRM` and sets the cancellation flag; no `setitimer` wiring
+  exists. Wired by PLAN_06b when `read -t` / `timeout` land.
+- **§6.1.5 Pipeline `poll` loop**. No pipeline executor exists.
+  Lands with PLAN_06b.
+- **§8 `ShellState`** (vars, functions, aliases, jobs, opts). Not
+  implemented. Lands with PLAN_06b.
+- **§9 Performance budget enforcement**. Bench scaffolding exists
+  (06a.7) but budgets are not enforced. Enforcement lands with
+  PLAN_06b.
+
+### Deferred
+
+- **`fredshell-line-editor`** crate — waits for PLAN_07.
+- **`fredshell-spec-runner`** crate — waits for PLAN_05 implementation.
+- **§3.1 `cargo xtask check-deps` lint** — not implemented. Dep
+  direction is enforced by convention today. Added when a violation
+  is attempted or before milestone 1.
+
+### Recently resolved open questions
+
+- **`fredshell-ansi` as a dep of `fredshell-core`.** Resolved by
+  PLAN_04: `fredshell-core` already depends on `fredshell-ansi` (the
+  capability probe consumes the decoder). The "`&dyn StyleWriter`
+  from the app layer" alternative is dropped.
+- **`OsString` vs `String`.** Resolved by PLAN_06a: the skeleton
+  uses `String` for v0 (test ergonomics, no real env-var handling
+  yet). PLAN_06b promotes to `OsString` when real env handling lands.
+  Recorded as a known migration cost in PLAN_06a.
+- **Parser as separate crate.** Resolved by PLAN_06a: internal
+  module of `fredshell-core`. Revisit only if a third-party embedder
+  asks.
 
 ## References
 
