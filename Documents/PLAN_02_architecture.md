@@ -693,6 +693,19 @@ PLAN_NN document flips status.
   PLAN_06b.
 - **`fredshell`** (binary, scaffold). Wires `TerminalSession` and
   the REPL; installs `SIGQUIT=SIG_IGN`. Argv / one-shot mode work.
+- **`fredshell-spec-runner`** (PLAN_05 — implemented). Library +
+  binary spec-corpus harness. `Case::load`, `Sandbox`, and
+  `run_case` execute `*.case.toml` cases against fredshell in
+  strict execution mode (no `/bin/sh` fallback) and compare
+  observed stdout / stderr / exit against recorded fixtures.
+  Verdict taxonomy (`ExpectedPass` / `Regression` / `ExpectedFail` /
+  `WontfixHonored` / `DeferredHonored` / `Reclassify`) classifies
+  outcomes against case status. `cargo xtask compat` walks the
+  corpus, emits a v1 JSON report, renders `COMPAT.md`, and gates
+  CI on regressions. `cargo xtask spec record` produces sidecars
+  against the pinned reference bash; `cargo xtask spec lint`
+  validates schema, detects orphan fixtures, and checks §11.1
+  builtins drift. 21-case seed corpus committed.
 
 ### Specification-only (waiting for implementation)
 
@@ -727,7 +740,6 @@ PLAN_NN document flips status.
 ### Deferred
 
 - **`fredshell-line-editor`** crate — waits for PLAN_07.
-- **`fredshell-spec-runner`** crate — waits for PLAN_05 implementation.
 - **§3.1 `cargo xtask check-deps` lint** — not implemented. Dep
   direction is enforced by convention today. Added when a violation
   is attempted or before milestone 1.
