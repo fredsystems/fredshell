@@ -34,6 +34,7 @@
 
 use serde::Deserialize;
 use std::collections::BTreeMap;
+use std::fmt;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -98,6 +99,20 @@ impl CaseStatus {
                     "expected `pass`, `fail`, `wontfix`, or `deferred:PLAN_XX`; got {other:?}"
                 )),
             },
+        }
+    }
+}
+
+impl fmt::Display for CaseStatus {
+    /// Render a [`CaseStatus`] using the exact spelling that appears
+    /// in `.case.toml` files. Round-trips with the on-disk parser
+    /// used by [`Case::load`].
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Pass => f.write_str("pass"),
+            Self::Fail => f.write_str("fail"),
+            Self::Wontfix => f.write_str("wontfix"),
+            Self::Deferred(plan) => write!(f, "deferred:{plan}"),
         }
     }
 }
@@ -296,6 +311,14 @@ mod tests {
         assert!(CaseStatus::parse("maybe").is_err());
         // Bare `deferred:` without a plan name is rejected.
         assert!(CaseStatus::parse("deferred:").is_err());
+    }
+
+    #[test]
+    fn case_status_display_round_trips_with_parse() {
+        for raw in ["pass", "fail", "wontfix", "deferred:PLAN_06b"] {
+            let parsed = CaseStatus::parse(raw).unwrap();
+            assert_eq!(parsed.to_string(), raw);
+        }
     }
 
     #[test]

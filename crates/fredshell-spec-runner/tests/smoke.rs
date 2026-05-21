@@ -14,7 +14,7 @@
 
 use std::path::PathBuf;
 
-use fredshell_spec_runner::{Case, CaseOutcome, run_case};
+use fredshell_spec_runner::{Case, CaseOutcome, CaseVerdict, classify, run_case};
 
 /// Resolve the workspace root from this crate's manifest directory.
 /// `CARGO_MANIFEST_DIR` points at `<repo>/crates/fredshell-spec-runner`;
@@ -60,4 +60,10 @@ fn exit_zero_smoke_case_passes() {
         // surprise the smoke test should fail loudly on.
         other => panic!("unexpected outcome: {other:?}"),
     }
+
+    // 05.5: the `pass`-status smoke fixture must classify as
+    // ExpectedPass under the taxonomy.
+    let verdict = classify(&case.status, &result.outcome);
+    assert_eq!(verdict, CaseVerdict::ExpectedPass);
+    assert!(!verdict.is_ci_failure());
 }

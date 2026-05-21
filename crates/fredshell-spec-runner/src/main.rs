@@ -16,12 +16,13 @@
 //!
 //! Exit codes:
 //!
-//! - `0` — case loaded, executed, and matched its fixtures.
-//! - `1` — case loaded and executed but did not match.
-//! - `2` — case loaded but the dispatcher refused to execute it
-//!   (strict-mode `NoExternalExecutor`). 05.5 will fold this into
-//!   the taxonomy; today it is its own exit code so developers can
-//!   see deferred refusals at a glance.
+//! - `0` — case verdict was [`CaseVerdict::ExpectedPass`],
+//!   [`CaseVerdict::ExpectedFail`], [`CaseVerdict::WontfixHonored`],
+//!   [`CaseVerdict::DeferredHonored`], or [`CaseVerdict::Reclassify`].
+//!   The §12 taxonomy says none of these fail CI; `Reclassify` prints
+//!   the advisory line and exits clean.
+//! - `1` — case verdict was [`CaseVerdict::Regression`]. A `pass`
+//!   case no longer passes.
 //! - `64` — case file or fixture failed to load (usage error,
 //!   conventionally `EX_USAGE` from `sysexits.h`).
 //! - `70` — executor produced an error the harness cannot map
@@ -37,7 +38,7 @@ use std::process::ExitCode;
 
 use clap::{Parser, Subcommand};
 
-use fredshell_spec_runner::{Case, CaseOutcome, SpecError, run_case};
+use fredshell_spec_runner::{Case, CaseOutcome, CaseVerdict, SpecError, classify, run_case};
 
 #[derive(Debug, Parser)]
 #[command(
@@ -101,42 +102,73 @@ fn run_one(path: &std::path::Path) -> ExitCode {
         }
     };
 
-    match result.outcome {
+    let verdict = classify(&case.status, &result.outcome);
+    render_outcome(path, &result.outcome);
+    render_verdict(&verdict);
+
+    if verdict.is_ci_failure() {
+        ExitCode::from(1)
+    } else {
+        ExitCode::SUCCESS
+    }
+}
+
+fn render_outcome(path: &std::path::Path, outcome: &CaseOutcome) {
+    match outcome {
         CaseOutcome::Pass => {
-            println!("pass: {}", path.display());
-            ExitCode::SUCCESS
+            println!("outcome: pass ({})", path.display());
         }
         CaseOutcome::Mismatch {
             observed_stdout,
             observed_stderr,
             observed_exit,
         } => {
-            println!("mismatch: {}", path.display());
+            println!("outcome: mismatch ({})", path.display());
             println!("  observed exit: {observed_exit}");
             println!(
                 "  observed stdout ({} bytes): {}",
                 observed_stdout.len(),
-                String::from_utf8_lossy(&observed_stdout),
+                String::from_utf8_lossy(observed_stdout),
             );
             println!(
                 "  observed stderr ({} bytes): {}",
                 observed_stderr.len(),
-                String::from_utf8_lossy(&observed_stderr),
+                String::from_utf8_lossy(observed_stderr),
             );
-            ExitCode::from(1)
         }
         CaseOutcome::ExecutorRefused { command, reason } => {
             println!(
-                "refused: {} — executor refused `{command}` ({reason})",
+                "outcome: executor refused ({}): `{command}` ({reason})",
                 path.display()
             );
-            ExitCode::from(2)
         }
-        // `CaseOutcome` is `#[non_exhaustive]`; treat unknown future
-        // outcomes as software errors so the developer sees them.
-        _ => {
-            eprintln!("error: unknown case outcome");
-            ExitCode::from(70)
+        // `CaseOutcome` is `#[non_exhaustive]`; fall through with a
+        // diagnostic so a developer notices unhandled future variants.
+        _ => println!("outcome: unknown ({})", path.display()),
+    }
+}
+
+fn render_verdict(verdict: &CaseVerdict) {
+    match verdict {
+        CaseVerdict::ExpectedPass => println!("verdict: expected-pass"),
+        CaseVerdict::Regression => println!("verdict: REGRESSION"),
+        CaseVerdict::ExpectedFail => println!("verdict: expected-fail"),
+        CaseVerdict::WontfixHonored => println!("verdict: wontfix-honored"),
+        CaseVerdict::DeferredHonored { plan } => {
+            println!("verdict: deferred-honored ({plan})");
         }
+        CaseVerdict::Reclassify {
+            from,
+            suggested,
+            reason,
+        } => {
+            // §12.1 emits `RECLASSIFY` as a distinct prefix so log
+            // scrapers can grep for it. Keep the suggested transition
+            // human-readable on the same line.
+            println!("RECLASSIFY: from `{from}` to `{suggested}` — {reason}");
+        }
+        // Future variants: stay quiet about exit code (default 0)
+        // but surface the variant name so the developer notices.
+        _ => println!("verdict: unknown"),
     }
 }

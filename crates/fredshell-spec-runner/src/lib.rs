@@ -26,9 +26,20 @@
 //!   `tests/spec/builtins_tier1/exit_zero.case.toml` exercised by
 //!   the unit suite.
 //!
-//! The case-status taxonomy comparison logic (§12) is **not** here —
-//! 05.5 owns it. 05.4 reports raw match / mismatch outcomes; 05.5
-//! consumes them and applies the `status` field.
+//! ## Subtask 05.5 scope
+//!
+//! 05.5 adds the case-status taxonomy on top of 05.4's raw outcomes:
+//!
+//! * [`CaseVerdict`] — interpret a [`CaseOutcome`] in light of the
+//!   declared [`CaseStatus`] (`pass` / `fail` / `wontfix` /
+//!   `deferred:PLAN_XX`).
+//! * [`classify`] — total function mapping `(status, outcome) →
+//!   verdict`.
+//! * [`VerdictTally`] — per-status aggregation used by the harness
+//!   binary and (in 05.6) by `cargo xtask compat`.
+//! * `RECLASSIFY` is the §12.1 signal: emitted as
+//!   [`CaseVerdict::Reclassify`] and accumulated in
+//!   [`VerdictTally::reclassify`].
 //!
 //! ## Crate policy
 //!
@@ -42,8 +53,10 @@ pub mod case;
 pub mod error;
 pub mod runner;
 pub mod sandbox;
+pub mod verdict;
 
 pub use case::{Case, CaseEnv, CaseExpected, CaseStatus};
 pub use error::{LoadError, SpecError};
 pub use runner::{CaseOutcome, CaseResult, run_case};
 pub use sandbox::Sandbox;
+pub use verdict::{CaseVerdict, ReclassifyReason, VerdictTally, classify};
