@@ -16,9 +16,9 @@
 //!   `<case>.stderr`, `<case>.exit`) for a `.case.toml` by running
 //!   the case under the pinned reference bash. See `PLAN_05` §4.4 /
 //!   05.7.
-//!
-//! Future `PLAN_05` subtasks (05.8) will hang `lint` off the same
-//! `Spec` parent.
+//! * `lint` — static checks over the corpus: schema validation,
+//!   orphan-fixture detection, and `PLAN_05` §11.1 builtins drift
+//!   versus the pinned reference bash. See `PLAN_05` 05.8.
 
 use std::env;
 use std::fs;
@@ -27,8 +27,10 @@ use std::path::Path;
 use clap::Subcommand;
 use color_eyre::eyre::{bail, Result};
 
+mod lint;
 mod record;
 
+pub use lint::LintArgs;
 pub use record::RecordArgs;
 
 /// Subcommands under `cargo xtask spec`.
@@ -41,6 +43,10 @@ pub enum SpecCmd {
     /// Record sidecar fixtures for a `.case.toml` by running the
     /// case under the pinned reference bash (`PLAN_05` 05.7).
     Record(RecordArgs),
+    /// Lint the spec corpus: schema validation, orphan-fixture
+    /// detection, and `PLAN_05` §11.1 builtins drift versus the
+    /// pinned reference bash (`PLAN_05` 05.8).
+    Lint(LintArgs),
 }
 
 /// Dispatch a `spec` subcommand.
@@ -48,6 +54,7 @@ pub fn run(cmd: &SpecCmd) -> Result<()> {
     match cmd {
         SpecCmd::Versions => run_versions(),
         SpecCmd::Record(args) => record::run(args),
+        SpecCmd::Lint(args) => lint::run(args),
     }
 }
 
