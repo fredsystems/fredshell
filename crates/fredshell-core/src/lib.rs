@@ -17,11 +17,13 @@
 
 pub mod builtins;
 pub mod exec;
+pub mod parser;
 pub mod repl;
 pub mod tty;
 
 pub use exec::env::ExecEnv;
-pub use exec::error::{ExecError, ExitStatus, ParseErrorPlaceholder, RunError, RunResult};
+pub use exec::error::{ExecError, ExitStatus, RunError, RunResult};
+pub use parser::{ParseError, ParseErrorKind, Script, parse};
 
 use std::fmt;
 use std::io;

@@ -15,6 +15,8 @@
 use std::fmt;
 use std::io;
 
+use crate::parser::ParseError;
+
 /// Exit status returned by a successfully-executed script.
 ///
 /// `0` means success, non-zero means the script itself signalled
@@ -69,36 +71,10 @@ impl RunResult {
 #[non_exhaustive]
 pub enum RunError {
     /// Parse-time failure. The source did not parse.
-    ///
-    /// The inner type is defined by the parser module (`PLAN_06a.3`).
-    /// Until that subtask lands, the variant exists with a `String`
-    /// payload as a placeholder. `PLAN_06a.3` replaces the payload
-    /// with the typed `ParseError` and adds `From<ParseError>` for
-    /// `RunError`.
-    Parse(ParseErrorPlaceholder),
+    Parse(ParseError),
     /// Runtime failure. The executor refused to run or aborted.
     Exec(ExecError),
 }
-
-/// Placeholder for the parser's error type.
-///
-/// Replaced by the real `ParseError` in `PLAN_06a.3`. The placeholder
-/// carries a `String` so the surface compiles before the parser
-/// module exists.
-#[derive(Debug, Clone, PartialEq, Eq)]
-#[non_exhaustive]
-pub struct ParseErrorPlaceholder {
-    /// Human-readable description of the parse failure.
-    pub message: String,
-}
-
-impl fmt::Display for ParseErrorPlaceholder {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&self.message)
-    }
-}
-
-impl std::error::Error for ParseErrorPlaceholder {}
 
 /// Runtime failure produced by the executor.
 ///
@@ -168,8 +144,8 @@ impl From<ExecError> for RunError {
     }
 }
 
-impl From<ParseErrorPlaceholder> for RunError {
-    fn from(err: ParseErrorPlaceholder) -> Self {
+impl From<ParseError> for RunError {
+    fn from(err: ParseError) -> Self {
         Self::Parse(err)
     }
 }
@@ -252,7 +228,8 @@ mod tests {
 
     #[test]
     fn run_error_display() {
-        let parse = RunError::Parse(ParseErrorPlaceholder {
+        let parse = RunError::Parse(ParseError {
+            kind: crate::parser::ParseErrorKind::Unsupported,
             message: "boom".to_owned(),
         });
         let exec = RunError::Exec(ExecError::CommandNotFound {
@@ -270,11 +247,12 @@ mod tests {
         let source = std::error::Error::source(&exec).expect("Exec carries a source");
         assert_eq!(source.to_string(), "command not found: x");
 
-        let parse = RunError::Parse(ParseErrorPlaceholder {
+        let parse = RunError::Parse(ParseError {
+            kind: crate::parser::ParseErrorKind::Unsupported,
             message: "syntax error at line 1".to_owned(),
         });
         let source = std::error::Error::source(&parse).expect("Parse carries a source");
-        assert_eq!(source.to_string(), "syntax error at line 1");
+        assert_eq!(source.to_string(), "unsupported: syntax error at line 1");
     }
 
     #[test]
@@ -290,8 +268,9 @@ mod tests {
     }
 
     #[test]
-    fn from_parse_placeholder_for_run_error() {
-        let p = ParseErrorPlaceholder {
+    fn from_parse_error_for_run_error() {
+        let p = ParseError {
+            kind: crate::parser::ParseErrorKind::Unsupported,
             message: "nope".to_owned(),
         };
         let run: RunError = p.into();
@@ -299,16 +278,6 @@ mod tests {
             RunError::Parse(inner) => assert_eq!(inner.message, "nope"),
             other => panic!("expected Parse, got {other:?}"),
         }
-    }
-
-    #[test]
-    fn parse_placeholder_display_and_error() {
-        let p = ParseErrorPlaceholder {
-            message: "boom".to_owned(),
-        };
-        assert_eq!(format!("{p}"), "boom");
-        // Implements std::error::Error.
-        let _: &dyn std::error::Error = &p;
     }
 
     #[test]
@@ -323,7 +292,8 @@ mod tests {
         );
         let _ = format!(
             "{:?}",
-            ParseErrorPlaceholder {
+            ParseError {
+                kind: crate::parser::ParseErrorKind::Unsupported,
                 message: "z".to_owned()
             }
         );

@@ -10,15 +10,14 @@
 //! fork/exec directly, falling back to `/bin/sh -c` for unsupported syntax.
 //!
 //! The public surface of the execution pipeline (`RunResult`,
-//! `RunError`, `ExecError`, `ExitStatus`, plus the `ParseError`
-//! placeholder) lives in [`error`] and is re-exported from the crate
-//! root. See `PLAN_06a` §2 for the contract.
+//! `RunError`, `ExecError`, `ExitStatus`) lives in [`error`] and is
+//! re-exported from the crate root. See `PLAN_06a` §2 for the contract.
 
 pub mod env;
 pub mod error;
 
 pub use env::ExecEnv;
-pub use error::{ExecError, ExitStatus, ParseErrorPlaceholder, RunError, RunResult};
+pub use error::{ExecError, ExitStatus, RunError, RunResult};
 
 use std::process::Command;
 
