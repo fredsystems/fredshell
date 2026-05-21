@@ -1,0 +1,8 @@
+description = "Single, double, and backslash-escaped quoting modes round-trip through `echo`"
+script = """
+echo 'single quotes preserve $literal'
+echo "double quotes expand ${HOME:-tilde}"
+echo backslash\\ space\\ joins
+"""
+status = "deferred:PLAN_06b"
+tags = ["quoting", "posix-overlap"]

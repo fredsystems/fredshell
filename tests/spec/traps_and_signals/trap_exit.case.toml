@@ -1,0 +1,7 @@
+description = "`trap '...' EXIT` runs the handler on normal script exit"
+script = """
+trap 'echo bye' EXIT
+echo hello
+"""
+status = "deferred:PLAN_09a"
+tags = ["traps", "exit-trap"]

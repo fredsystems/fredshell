@@ -1,0 +1,8 @@
+description = "`set -e` causes the script to abort on the first failing command; subsequent commands are not executed"
+script = """
+set -e
+false
+echo unreached
+"""
+status = "deferred:PLAN_06b"
+tags = ["error-handling", "set-e"]

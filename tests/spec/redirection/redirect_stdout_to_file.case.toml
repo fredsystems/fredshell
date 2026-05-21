@@ -1,0 +1,8 @@
+description = "`>` redirects stdout to a file; reading the file back yields the redirected bytes (uses the `read` builtin to avoid an external `cat` dependency)"
+script = """
+echo hello > out.txt
+read line < out.txt
+echo "$line"
+"""
+status = "deferred:PLAN_06b"
+tags = ["redirection", "posix-overlap"]

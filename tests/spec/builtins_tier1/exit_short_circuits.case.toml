@@ -1,0 +1,7 @@
+description = "First `exit` short-circuits; subsequent commands in the script are not executed"
+script = """
+exit 2
+exit 5
+"""
+status = "pass"
+tags = ["builtin", "exit", "short-circuit"]

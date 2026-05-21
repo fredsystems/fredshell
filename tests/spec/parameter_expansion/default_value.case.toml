@@ -1,0 +1,6 @@
+description = "`${UNSET:-default}` returns `default` when the variable is unset"
+script = """
+echo "${UNSET_VAR:-default}"
+"""
+status = "deferred:PLAN_06b"
+tags = ["parameter-expansion", "default-value", "posix-overlap"]
