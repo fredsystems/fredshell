@@ -74,6 +74,12 @@ fn main() -> Result<()> {
             cmd!("cargo", "clippy", "--all-targets", "--", "-D", "warnings").run()?;
             cmd!("cargo-machete").run()?;
             cmd!("cargo", "test", "--workspace").run()?;
+            // `PLAN_05` 05.11: every commit verifies `COMPAT.md` is
+            // in sync with the current corpus. Runs the corpus
+            // through xtask compat in `--check-readme` mode; any
+            // drift fails the commit with a message pointing to
+            // `cargo xtask compat --update-readme`.
+            cmd!("cargo", "xtask", "compat", "--check-readme").run()?;
         }
         Cmd::Coverage => {
             cmd!(
