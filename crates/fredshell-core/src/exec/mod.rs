@@ -8,6 +8,15 @@
 //! Phase 1 strategy: shell out to `/bin/sh -c` for any non-builtin line.
 //! Phase 2: parse simple `cmd arg1 arg2 | cmd2 > file` ourselves and
 //! fork/exec directly, falling back to `/bin/sh -c` for unsupported syntax.
+//!
+//! The public surface of the execution pipeline (`RunResult`,
+//! `RunError`, `ExecError`, `ExitStatus`, plus the `ParseError`
+//! placeholder) lives in [`error`] and is re-exported from the crate
+//! root. See `PLAN_06a` §2 for the contract.
+
+pub mod error;
+
+pub use error::{ExecError, ExitStatus, ParseErrorPlaceholder, RunError, RunResult};
 
 use std::process::Command;
 

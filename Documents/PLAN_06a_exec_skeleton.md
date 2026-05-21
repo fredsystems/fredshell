@@ -440,8 +440,9 @@ after every subtask.
 To be filled as subtasks complete, one row per subtask, format
 matching PLAN_04 §14.
 
-| Subtask | Commit | Date | Notes |
-| ------- | ------ | ---- | ----- |
+| Subtask | Commit | Date       | Notes                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| ------- | ------ | ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 06a.1   | TBD    | 2026-05-20 | Added `exec/error.rs` with `RunResult`, `RunError`, `ExecError`, `ExitStatus`, `ParseErrorPlaceholder`. Converted `exec.rs` to `exec/mod.rs` to enable the directory module. Crate-root re-exports added. `From<ParseError>` deferred to 06a.3 because the real `ParseError` does not yet exist; tracked by `ParseErrorPlaceholder` and its `From` impl, both removed in 06a.3. 14 unit tests added; 137 core tests passing. |
 
 ## 12. Cleanup registry
 

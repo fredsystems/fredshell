@@ -20,6 +20,8 @@ pub mod exec;
 pub mod repl;
 pub mod tty;
 
+pub use exec::error::{ExecError, ExitStatus, ParseErrorPlaceholder, RunError, RunResult};
+
 use std::fmt;
 use std::io;
 
