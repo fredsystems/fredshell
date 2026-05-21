@@ -1,9 +1,7 @@
 # fredshell — Master Plan
 
-> Last updated: 2026-05-20 — PLAN_06 split into 06a (Phase A execution
-> pipeline skeleton, draft) and 06b (Phase B real bash-compat
-> executor, stub pending). 06a now sequences between PLAN_04 and
-> PLAN_05.
+> Last updated: 2026-05-21 — PLAN_06a marked implemented (Phase A
+> execution pipeline skeleton landed); PLAN_06b remains stub-pending.
 
 This is the top-level index of fredshell's planning documents. Read this first.
 The actual design lives in the per-area `PLAN_XX_*.md` documents and the ADRs in
@@ -68,7 +66,7 @@ Two foundational decisions shape everything else and are recorded as ADRs:
 | 03  | `Documents/PLAN_03_ansi.md`            | A     | implemented   | `fredshell-ansi` crate: encoder API, minimal decoder, `Write`-based contract, allocation budget.                                                        |
 | 04  | `Documents/PLAN_04_terminal_io.md`     | A     | implemented   | Raw mode discipline, signals, process groups, terminal feature detection, kitty keyboard negotiation.                                                   |
 | 05  | `Documents/PLAN_05_testing.md`         | A     | draft         | Spec-test harness, corpus methodology, oils-spec integration, real-world script corpus, CI metrics.                                                     |
-| 06a | `Documents/PLAN_06a_exec_skeleton.md`  | A     | draft         | Execution-pipeline public surface: `parse`, `run_source`, `ExecEnv`, `RunResult`, `ExecError`, `Tier2Builtin`. Stub impl wraps today's `dispatch_line`. |
+| 06a | `Documents/PLAN_06a_exec_skeleton.md`  | A     | implemented   | Execution-pipeline public surface: `parse`, `run_source`, `ExecEnv`, `RunResult`, `ExecError`, `Tier2Builtin`. Stub impl wraps today's `dispatch_line`. |
 | 06b | `Documents/PLAN_06b_exec_semantics.md` | B     | stub pending  | Native parser strategy, brush-parser evaluation, POSIX-behavior scope, pipelines/redirections/job control. Corpus-dependent.                            |
 | 07  | `Documents/PLAN_07_interactive_ux.md`  | A     | draft         | Line editor, key-byte decoder, history, completion, fuzzy search, keybindings, syntax highlighting.                                                     |
 | 08  | `Documents/PLAN_08_prompt.md`          | A     | draft         | Starship-style prompt renderer, configuration model, performance budget.                                                                                |

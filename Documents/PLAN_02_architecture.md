@@ -1,8 +1,8 @@
 # PLAN_02 — Architecture
 
-> Last updated: 2026-05-20 — §3 crate-status table refreshed
-> (fredshell-ansi and fredshell-prompt now exist; PLAN_04 implemented);
-> §12 implementation-status pointer added.
+> Last updated: 2026-05-21 — §12 refreshed for PLAN_06a (Phase A
+> execution-pipeline skeleton implemented; §4.1/§4.2/§4.3/§4.5
+> surfaces and §9 bench scaffolding moved to Implemented).
 > Phase: A. Status: draft.
 
 This document defines fredshell's crate layout, module boundaries, key
@@ -663,26 +663,53 @@ PLAN_NN document flips status.
   `CancellationToken`, exposed by `TerminalSession`).
 - **`fredshell-core::repl`** (PLAN_04 04.10 — implemented). REPL on
   top of `TerminalSession`; raw-mode byte-pump with cooked-stdin
-  fallback; dispatches via today's stub `dispatch_line`.
+  fallback; dispatches each line through `exec::run_source` (PLAN_06a
+  06.6).
+- **§4.1 Parser surface** (PLAN_06a — surface only). `parse`,
+  `Script`, `ParseError`, `ParseErrorKind` exist as a stub: the v0
+  parser stores the source string verbatim and rejects NUL bytes.
+  Real tokenisation, AST, and `ParseErrorKind` variants land with
+  PLAN_06b.
+- **§4.2 `ExecEnv`** (PLAN_06a — surface only). `ExecEnv` exists
+  with `from_process` and `sandboxed` constructors and v0 fields
+  (`cwd`, `env: HashMap<String, String>`, `last_status`). Tier-2
+  builtin registry and full `ShellState` fields land with PLAN_06b
+  and PLAN_09.
+- **§4.3 Executor surface** (PLAN_06a — surface only). `run_source`,
+  `run_script`, `RunResult { status, exit_requested }`, `RunError`,
+  `ExecError`, `ExitStatus` exist. The v0 dispatcher walks lines,
+  routes Tier-1 builtins through `builtins::try_run`, and falls back
+  to `/bin/sh -c <line>` for everything else. Real executor lands
+  with PLAN_06b.
+- **§4.5 Tier-2 trait surface** (PLAN_06a — surface only).
+  `Tier2Builtin` (object-safe, `Send + Sync`), `Tier2Ctx<'a>`, and
+  `Tier2Error` exist with a compile-time object-safety check. No
+  impls; no registry; dispatch lands with PLAN_09.
+- **§9 Bench scaffolding** (PLAN_06a — surface only).
+  `crates/fredshell-core/benches/exec_roundtrip.rs` exists with
+  `parse_only` and `parse_and_exec` Criterion benches, seeding the
+  performance budget tracker. Baseline numbers recorded in
+  PLAN_06a §11 row 06a.7. Real budget enforcement lands with
+  PLAN_06b.
 - **`fredshell`** (binary, scaffold). Wires `TerminalSession` and
   the REPL; installs `SIGQUIT=SIG_IGN`. Argv / one-shot mode work.
 
 ### Specification-only (waiting for implementation)
 
-- **§4.1 Parser surface** (`parse`, `Ast`, `ParseError`). No real
-  parser exists; today's REPL uses `shell_words::split`. Skeleton
-  shape locked by PLAN_06a.
-- **§4.2 `ExecEnv`**. No struct exists. Skeleton shape locked by
-  PLAN_06a; real fields land with PLAN_06b.
-- **§4.3 Executor** (`execute`, `ExitStatus`, `ExecError`). No
-  executor exists; today's REPL shells out via `exec::run_via_sh`.
-  Skeleton in PLAN_06a, real implementation in PLAN_06b.
+- **§4.1 Parser semantics**. The v0 parser does not tokenise; it
+  stores the source string verbatim. Real lexer, AST, and
+  POSIX-grammar coverage land with PLAN_06b.
+- **§4.2 `ExecEnv` semantics**. `ExecEnv` does not yet carry
+  functions, aliases, shell options, or a job table. Real
+  `ShellState` lands with PLAN_06b; Tier-2 registry with PLAN_09.
+- **§4.3 Executor semantics**. The v0 dispatcher delegates external
+  commands to `/bin/sh -c`. Real fork/exec, pipelines, redirections,
+  and job control land with PLAN_06b.
 - **§4.4 Tier-1 builtins**. Only `cd`, `exit`, and a few stubs exist
   in `fredshell-core::builtins`. Full POSIX set lands incrementally
   across PLAN_06b and PLAN_09.
-- **§4.5 Tier-2 builtins** (`Tier2Builtin` trait, `Tier2Ctx`). No
-  trait exists. Inventory and dispatch land with PLAN_09; the trait
-  shape is locked by PLAN_06a so the dispatch table can be defined.
+- **§4.5 Tier-2 builtin impls**. The trait exists; no builtins
+  implement it yet. Inventory and dispatch land with PLAN_09.
 - **§4.6 Dispatch order**. Today's `dispatch_line` does
   builtin-then-fallback-to-/bin/sh. The full alias → function →
   tier-1 → tier-2 → external order lands with PLAN_06b.
@@ -693,9 +720,9 @@ PLAN_NN document flips status.
   Lands with PLAN_06b.
 - **§8 `ShellState`** (vars, functions, aliases, jobs, opts). Not
   implemented. Lands with PLAN_06b.
-- **§9 Performance budgets**. Bench crate does not exist. Bench
-  scaffolding lands with PLAN_06a (one bench for parse + execute
-  round-trip on a trivial command) and grows with PLAN_06b.
+- **§9 Performance budget enforcement**. Bench scaffolding exists
+  (06a.7) but budgets are not enforced. Enforcement lands with
+  PLAN_06b.
 
 ### Deferred
 
