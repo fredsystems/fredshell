@@ -3,29 +3,49 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT.
 
-//! Command execution.
+//! Command execution: stub `run_source` / `run_script` dispatcher.
 //!
-//! Phase 1 strategy: shell out to `/bin/sh -c` for any non-builtin line.
-//! Phase 2: parse simple `cmd arg1 arg2 | cmd2 > file` ourselves and
-//! fork/exec directly, falling back to `/bin/sh -c` for unsupported syntax.
+//! v0 implements the public entry points specified by `PLAN_06a` §2.3
+//! by walking [`Script::source`] line by line and shelling out to
+//! `/bin/sh -c` for any non-builtin line (§3). The real parser and
+//! executor land with `PLAN_06b`; this module exists so `PLAN_05`'s
+//! spec harness and the binary REPL can share one code path today.
 //!
-//! The public surface of the execution pipeline (`RunResult`,
-//! `RunError`, `ExecError`, `ExitStatus`) lives in [`error`] and is
-//! re-exported from the crate root. See `PLAN_06a` §2 for the contract.
+//! ## Module layout
+//!
+//! - [`error`] — result/error envelopes (`RunResult`, `RunError`,
+//!   `ExecError`, `ExitStatus`).
+//! - [`env`] — [`ExecEnv`] and its constructors.
+//! - [`builtin`] — [`Tier2Builtin`] trait shape (definitions only).
+//! - [`testing`] — crate-internal output-capture hook used by
+//!   `PLAN_05`'s harness; removed when `PLAN_06b` lands real stdio
+//!   on `ExecEnv`.
+//!
+//! See `PLAN_06a` §3 for the stub dispatcher's contract and §6 for
+//! the testing hook's rationale.
 
 pub mod builtin;
 pub mod env;
 pub mod error;
+pub(crate) mod testing;
 
 pub use builtin::{Tier2Builtin, Tier2Ctx, Tier2Error};
 pub use env::ExecEnv;
 pub use error::{ExecError, ExitStatus, RunError, RunResult};
 
-use std::process::Command;
+use std::process::{Command, Stdio};
 
+use crate::builtins::{self, BuiltinOutcome};
+use crate::parser::{Script, parse};
 use crate::{CoreError, CoreResult};
 
-/// Execute a command string via `/bin/sh -c` and return its exit code.
+/// Execute a command string via `/bin/sh -c` and propagate its exit
+/// code by calling [`std::process::exit`].
+///
+/// Used by the binary's one-shot path (`fredshell -c …`). The
+/// interactive REPL and the spec harness use [`run_source`] instead,
+/// which returns the exit code as a value rather than aborting the
+/// process.
 ///
 /// # Errors
 ///
@@ -51,4 +71,411 @@ pub fn run_via_sh(command: &str) -> CoreResult<()> {
         }
     }
     Ok(())
+}
+
+/// Parse and execute a source string in one call.
+///
+/// Convenience wrapper around [`parse`] + [`run_script`]. Used by the
+/// `PLAN_05` spec harness and the binary REPL.
+///
+/// # Errors
+///
+/// Returns [`RunError::Parse`] if `source` fails to parse (v0 only
+/// rejects NUL bytes — see [`crate::parser::parse`]), or
+/// [`RunError::Exec`] if the executor itself fails. A script that
+/// exits non-zero is **not** a `RunError`; the exit status is carried
+/// in [`RunResult::status`].
+pub fn run_source(source: &str, env: &mut ExecEnv) -> Result<RunResult, RunError> {
+    let script = parse(source)?;
+    run_script(&script, env)
+}
+
+/// Execute a pre-parsed [`Script`].
+///
+/// The binary REPL uses this when it has already parsed user input
+/// (e.g. to validate before recording in history). The harness uses
+/// [`run_source`] instead.
+///
+/// v0 implementation per `PLAN_06a` §3: walks `script.source` line
+/// by line, dispatches each non-empty line to the builtin path or to
+/// `/bin/sh -c`. The exit status of the last executed line becomes
+/// [`RunResult::status`]; an `exit` builtin short-circuits with its
+/// requested code.
+///
+/// # Errors
+///
+/// Returns [`RunError::Exec`] if the executor cannot run a line at
+/// all (e.g. `/bin/sh` cannot be spawned). Per-line non-zero exit
+/// codes propagate via [`RunResult::status`].
+pub fn run_script(script: &Script, env: &mut ExecEnv) -> Result<RunResult, RunError> {
+    dispatch_script(script, env, &mut Capture::Inherit)
+}
+
+/// Stub dispatcher shared by [`run_script`] and the testing capture
+/// hook in [`testing`].
+///
+/// Walks the script's source line by line, skipping blank lines,
+/// delegating each surviving line to [`dispatch_line`]. The exit
+/// status of the last executed line is the script's status; an
+/// `exit` builtin short-circuits with its requested code.
+pub(crate) fn dispatch_script(
+    script: &Script,
+    env: &mut ExecEnv,
+    capture: &mut Capture<'_>,
+) -> Result<RunResult, RunError> {
+    let mut status = ExitStatus::SUCCESS;
+    for raw_line in script.source().split('\n') {
+        let line = raw_line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        match dispatch_line(line, env, capture)? {
+            LineOutcome::Continue(s) => status = s,
+            LineOutcome::Exit(s) => {
+                status = s;
+                break;
+            }
+        }
+    }
+    Ok(RunResult::new(status))
+}
+
+/// What [`dispatch_line`] reports back to [`dispatch_script`].
+#[derive(Debug, Clone, Copy)]
+enum LineOutcome {
+    /// Line executed; the loop should keep going.
+    Continue(ExitStatus),
+    /// `exit` builtin requested termination. The loop should stop
+    /// and surface this status.
+    Exit(ExitStatus),
+}
+
+/// Where the dispatcher should send a child process's stdio.
+///
+/// `Inherit` is the binary REPL's path: the child inherits the
+/// shell's stdio. `Buffers` is the harness's path: the dispatcher
+/// pipes stdout/stderr into the provided buffers.
+///
+/// Builtins (`cd`, `exit`) do not flow through this enum in v0:
+/// they mutate process state directly and write any diagnostics to
+/// the process's real `stderr`. `PLAN_06b` rewrites builtins to take
+/// `Box<dyn Write>` and the carve-out goes away.
+pub(crate) enum Capture<'a> {
+    /// Inherit the parent's stdio. Binary REPL path.
+    Inherit,
+    /// Pipe child stdout/stderr into these buffers. Harness path.
+    // TODO(PLAN_05): consumed by the spec harness via
+    // `testing::run_source_capturing`. Until the harness ships in
+    // PLAN_05 the variant is reachable only from tests, so clippy's
+    // dead-code lint fires. Allowed per AGENTS.md "temporary
+    // refactor" exception.
+    #[allow(dead_code)]
+    Buffers {
+        /// Captured child stdout, appended on each spawned command.
+        stdout: &'a mut Vec<u8>,
+        /// Captured child stderr, appended on each spawned command.
+        stderr: &'a mut Vec<u8>,
+    },
+}
+
+/// Execute one line: builtin lookup first, fall back to `/bin/sh -c`.
+fn dispatch_line(
+    line: &str,
+    _env: &mut ExecEnv,
+    capture: &mut Capture<'_>,
+) -> Result<LineOutcome, RunError> {
+    // Tokenise for builtin dispatch only. The full line is handed
+    // verbatim to `/bin/sh -c` on fallback so the shell does its
+    // own quoting/expansion.
+    let argv: Vec<String> = match shell_words::split(line) {
+        Ok(v) => v,
+        Err(_) => {
+            // Tokeniser failed (e.g. unterminated quote). v0 hands
+            // it straight to /bin/sh so its error reporting is
+            // authoritative; PLAN_06b reports via ParseError.
+            return spawn_via_sh(line, capture).map(LineOutcome::Continue);
+        }
+    };
+
+    match builtins::try_run(&argv).map_err(|e| RunError::Exec(core_error_to_exec(e)))? {
+        Some(BuiltinOutcome::Exit(code)) => Ok(LineOutcome::Exit(ExitStatus(code))),
+        Some(BuiltinOutcome::Handled(code)) => Ok(LineOutcome::Continue(ExitStatus(code))),
+        None => spawn_via_sh(line, capture).map(LineOutcome::Continue),
+    }
+}
+
+/// Spawn `/bin/sh -c <line>` honouring the configured [`Capture`].
+fn spawn_via_sh(line: &str, capture: &mut Capture<'_>) -> Result<ExitStatus, RunError> {
+    let mut cmd = Command::new("/bin/sh");
+    cmd.arg("-c").arg(line);
+
+    match capture {
+        Capture::Inherit => {
+            let status = cmd.status().map_err(|e| {
+                RunError::Exec(ExecError::HostIo(std::io::Error::new(
+                    e.kind(),
+                    format!("failed to spawn /bin/sh: {e}"),
+                )))
+            })?;
+            Ok(ExitStatus(status.code().unwrap_or(-1)))
+        }
+        Capture::Buffers { stdout, stderr } => {
+            cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
+            let output = cmd.output().map_err(|e| {
+                RunError::Exec(ExecError::HostIo(std::io::Error::new(
+                    e.kind(),
+                    format!("failed to spawn /bin/sh: {e}"),
+                )))
+            })?;
+            stdout.extend_from_slice(&output.stdout);
+            stderr.extend_from_slice(&output.stderr);
+            Ok(ExitStatus(output.status.code().unwrap_or(-1)))
+        }
+    }
+}
+
+/// Map a [`CoreError`] surfaced by the builtin layer to an
+/// [`ExecError`] for the run-pipeline envelope.
+///
+/// Today no builtin actually produces a [`CoreError`] (the variants
+/// are reserved for `PLAN_07`+ builtins); the match exists so a future
+/// surface change does not silently lose information.
+fn core_error_to_exec(err: CoreError) -> ExecError {
+    match err {
+        CoreError::SpawnShell { source, .. } | CoreError::ReplIo(source) => {
+            ExecError::HostIo(source)
+        }
+        CoreError::Terminal(_) | CoreError::RawMode(_) | CoreError::Builtin(_) => {
+            ExecError::InternalInvariant {
+                what: "builtin surfaced non-IO CoreError",
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
+mod tests {
+    use super::*;
+    use crate::exec::env::GLOBAL_ENV_LOCK;
+    use std::env as std_env;
+    use std::fs;
+    use std::path::PathBuf;
+
+    fn sandbox() -> ExecEnv {
+        ExecEnv::sandboxed(PathBuf::from("/tmp"))
+    }
+
+    /// Serialise any test that spawns `/bin/sh` or mutates
+    /// process-global cwd/env. The `cd_*` tests below create and
+    /// remove a tmp directory and `set_current_dir` into it; without
+    /// this lock, a parallel spawn inherits the doomed cwd and
+    /// `/bin/sh` writes a `getcwd` warning to stderr.
+    fn lock() -> std::sync::MutexGuard<'static, ()> {
+        GLOBAL_ENV_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
+    #[test]
+    fn run_source_returns_parse_error_on_nul_byte() {
+        let _g = lock();
+        let mut env = sandbox();
+        let err = run_source("echo \0hidden", &mut env).expect_err("NUL must reject");
+        match err {
+            RunError::Parse(_) => {}
+            other => panic!("expected Parse, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn run_source_succeeds_on_empty_source() {
+        let _g = lock();
+        let mut env = sandbox();
+        let r = run_source("", &mut env).expect("empty is fine");
+        assert_eq!(r.status, ExitStatus::SUCCESS);
+    }
+
+    #[test]
+    fn run_source_succeeds_on_whitespace_only() {
+        let _g = lock();
+        let mut env = sandbox();
+        let r = run_source("   \n\t  \n", &mut env).expect("blank ok");
+        assert_eq!(r.status, ExitStatus::SUCCESS);
+    }
+
+    #[test]
+    fn run_source_external_command_succeeds() {
+        let _g = lock();
+        let mut env = sandbox();
+        let r = run_source("true", &mut env).expect("true runs");
+        assert_eq!(r.status, ExitStatus::SUCCESS);
+    }
+
+    #[test]
+    fn run_source_external_command_propagates_non_zero_exit() {
+        let _g = lock();
+        let mut env = sandbox();
+        let r = run_source("false", &mut env).expect("false runs");
+        assert!(!r.status.is_success());
+        assert_eq!(r.status, ExitStatus(1));
+    }
+
+    #[test]
+    fn run_source_captures_stdout_via_testing_hook() {
+        let _g = lock();
+        let mut env = sandbox();
+        let captured = testing::run_source_capturing("echo hi", &mut env).expect("ok");
+        assert_eq!(captured.result.status, ExitStatus::SUCCESS);
+        assert_eq!(captured.stdout, b"hi\n");
+        assert!(captured.stderr.is_empty());
+    }
+
+    #[test]
+    fn run_source_captures_stderr_via_testing_hook() {
+        let _g = lock();
+        let mut env = sandbox();
+        let captured = testing::run_source_capturing("echo bad 1>&2", &mut env).expect("ok");
+        assert_eq!(captured.result.status, ExitStatus::SUCCESS);
+        assert!(captured.stdout.is_empty());
+        assert_eq!(captured.stderr, b"bad\n");
+    }
+
+    #[test]
+    fn run_source_command_not_found_propagates_via_sh_exit_127() {
+        let _g = lock();
+        let mut env = sandbox();
+        let captured =
+            testing::run_source_capturing("definitely-not-a-real-command-fredshell-test", &mut env)
+                .expect("spawns sh fine; sh reports not found");
+        // POSIX shells return 127 for command-not-found. The
+        // executor itself did not fail — the script exited 127.
+        assert_eq!(captured.result.status, ExitStatus(127));
+    }
+
+    #[test]
+    fn run_script_walks_lines_and_returns_last_status() {
+        let _g = lock();
+        let mut env = sandbox();
+        let captured =
+            testing::run_source_capturing("echo a\necho b\necho c\n", &mut env).expect("ok");
+        assert_eq!(captured.result.status, ExitStatus::SUCCESS);
+        assert_eq!(captured.stdout, b"a\nb\nc\n");
+    }
+
+    #[test]
+    fn run_script_skips_blank_lines() {
+        let _g = lock();
+        let mut env = sandbox();
+        let captured =
+            testing::run_source_capturing("\n\necho x\n\n\necho y\n", &mut env).expect("ok");
+        assert_eq!(captured.result.status, ExitStatus::SUCCESS);
+        assert_eq!(captured.stdout, b"x\ny\n");
+    }
+
+    #[test]
+    fn exit_builtin_short_circuits_with_status() {
+        let _g = lock();
+        let mut env = sandbox();
+        let captured =
+            testing::run_source_capturing("echo before\nexit 42\necho after\n", &mut env)
+                .expect("ok");
+        assert_eq!(captured.result.status, ExitStatus(42));
+        // "before" ran; "after" did not.
+        assert_eq!(captured.stdout, b"before\n");
+    }
+
+    #[test]
+    fn exit_builtin_with_no_arg_returns_zero() {
+        let _g = lock();
+        let mut env = sandbox();
+        let captured =
+            testing::run_source_capturing("exit\necho unreachable\n", &mut env).expect("ok");
+        assert_eq!(captured.result.status, ExitStatus::SUCCESS);
+        assert!(captured.stdout.is_empty());
+    }
+
+    #[test]
+    fn cd_builtin_changes_process_cwd_and_subsequent_pwd_sees_it() {
+        // The `cd` builtin mutates process-global cwd; serialise.
+        let _guard = lock();
+
+        let tmp = std_env::temp_dir().join("fredshell-06a5-cd-test");
+        fs::create_dir_all(&tmp).expect("create tmp");
+        let original = std_env::current_dir().expect("snapshot cwd");
+
+        let mut env = sandbox();
+        let captured =
+            testing::run_source_capturing(&format!("cd {}\npwd\n", tmp.display()), &mut env)
+                .expect("ok");
+
+        // Restore before asserting so a failure does not poison other
+        // tests.
+        std_env::set_current_dir(&original).expect("restore cwd");
+        fs::remove_dir(&tmp).ok();
+
+        assert_eq!(captured.result.status, ExitStatus::SUCCESS);
+        // pwd output should match the tmp directory. On macOS
+        // /tmp is symlinked to /private/tmp; canonicalise both sides.
+        let pwd_out = String::from_utf8(captured.stdout).expect("utf-8");
+        let pwd_path = PathBuf::from(pwd_out.trim());
+        let lhs = fs::canonicalize(&pwd_path).unwrap_or(pwd_path);
+        let rhs = fs::canonicalize(&tmp).unwrap_or(tmp);
+        assert_eq!(lhs, rhs);
+    }
+
+    #[test]
+    fn cd_to_nonexistent_directory_returns_status_one() {
+        let _guard = lock();
+
+        let original = std_env::current_dir().expect("snapshot");
+        let mut env = sandbox();
+        let captured =
+            testing::run_source_capturing("cd /this/path/does/not/exist/fredshell-06a5", &mut env)
+                .expect("ok");
+        std_env::set_current_dir(&original).expect("restore");
+
+        assert_eq!(captured.result.status, ExitStatus(1));
+    }
+
+    #[test]
+    fn run_source_with_inherit_capture_still_succeeds() {
+        // The default Capture::Inherit path is exercised by run_source
+        // (the binary REPL's path). It does not capture output but
+        // must still return an accurate ExitStatus.
+        let _g = lock();
+        let mut env = sandbox();
+        let r = run_source("true", &mut env).expect("true");
+        assert_eq!(r.status, ExitStatus::SUCCESS);
+        let r = run_source("false", &mut env).expect("false");
+        assert_eq!(r.status, ExitStatus(1));
+    }
+
+    #[test]
+    fn run_script_with_prebuilt_script_round_trips() {
+        let _g = lock();
+        let mut env = sandbox();
+        let script = parse("true").expect("parses");
+        let r = run_script(&script, &mut env).expect("ok");
+        assert_eq!(r.status, ExitStatus::SUCCESS);
+    }
+
+    #[test]
+    fn core_error_to_exec_maps_io_variants_to_hostio() {
+        let e = core_error_to_exec(CoreError::ReplIo(std::io::Error::other("x")));
+        assert!(matches!(e, ExecError::HostIo(_)));
+    }
+
+    #[test]
+    fn core_error_to_exec_maps_other_variants_to_internal_invariant() {
+        let e = core_error_to_exec(CoreError::Terminal(
+            crate::tty::OpenError::NoControllingTerminal,
+        ));
+        match e {
+            ExecError::InternalInvariant { what } => {
+                assert!(what.contains("non-IO"));
+            }
+            other => panic!("expected InternalInvariant, got {other:?}"),
+        }
+    }
 }

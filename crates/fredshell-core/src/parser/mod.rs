@@ -27,10 +27,6 @@ use std::fmt;
 /// either consumer.
 #[derive(Debug, Clone)]
 pub struct Script {
-    // TODO(PLAN_06a.5): consumed by the stub dispatcher in `exec::mod`
-    // once `run_source`/`run_script` are wired up. Allowed dead-code
-    // until then per AGENTS.md "temporary refactor" exception.
-    #[allow(dead_code)]
     pub(crate) source: String,
 }
 
@@ -39,9 +35,6 @@ impl Script {
     ///
     /// Crate-internal because external callers must not depend on
     /// `Script` being source-shaped; `PLAN_06b` removes this.
-    // TODO(PLAN_06a.5): used by the stub dispatcher; dead-code until
-    // then per AGENTS.md "temporary refactor" exception.
-    #[allow(dead_code)]
     #[must_use]
     pub(crate) fn source(&self) -> &str {
         &self.source

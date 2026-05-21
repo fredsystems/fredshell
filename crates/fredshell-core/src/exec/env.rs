@@ -22,6 +22,14 @@ use std::path::PathBuf;
 
 use super::error::ExecError;
 
+/// Serialises tests that mutate process-global state
+/// (`env::set_var`, `env::set_current_dir`). Shared between
+/// [`mod@tests`] and the dispatcher tests in `exec/mod.rs` so the
+/// parallel test runner cannot observe one test's cwd swap during
+/// another test's `from_process` call.
+#[cfg(test)]
+pub(crate) static GLOBAL_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 /// The environment a script executes in.
 ///
 /// Constructed by the host (binary or harness) and passed by mutable
@@ -100,13 +108,8 @@ mod tests {
     use super::*;
     use std::ffi::OsStr;
     use std::fs;
-    use std::sync::Mutex;
 
-    /// Serializes tests that mutate process-global state
-    /// (`env::set_var`, `env::set_current_dir`). Without this, the
-    /// parallel test runner can observe one test's cwd swap during
-    /// another test's `from_process` call.
-    static GLOBAL_ENV_LOCK: Mutex<()> = Mutex::new(());
+    use super::GLOBAL_ENV_LOCK;
 
     #[test]
     fn sandboxed_starts_with_given_cwd_and_empty_env() {
