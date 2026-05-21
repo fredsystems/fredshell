@@ -1,0 +1,7 @@
+description = "Blank lines preceding `exit 3` are skipped; final exit status is 3"
+script = """
+
+exit 3
+"""
+status = "pass"
+tags = ["builtin", "exit", "blank-lines"]

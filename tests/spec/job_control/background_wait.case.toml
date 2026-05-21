@@ -1,0 +1,8 @@
+description = "A background job started with `&` is awaited by `wait`; script then continues"
+script = """
+sleep 0.01 &
+wait
+echo done
+"""
+status = "deferred:PLAN_09a"
+tags = ["job-control", "background", "wait"]

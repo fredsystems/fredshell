@@ -1,0 +1,6 @@
+description = "A simple `|` pipeline forwards stdout from one stage to stdin of the next (builtin-only: avoids external commands so the case is hermetic against PATH)"
+script = """
+echo hello | { read x; echo "got:$x"; }
+"""
+status = "deferred:PLAN_06b"
+tags = ["pipelines", "posix-overlap"]

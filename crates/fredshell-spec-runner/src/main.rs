@@ -1,0 +1,174 @@
+// Copyright (C) 2026 Fred Clausen
+// Use of this source code is governed by an MIT-style
+// license that can be found in the LICENSE file or at
+// https://opensource.org/licenses/MIT.
+
+//! `fredshell-spec-runner` CLI — thin debugging harness for one case
+//! at a time.
+//!
+//! Production batch runs go through `cargo xtask compat` (added in
+//! 05.6). This binary exists so a developer can inspect a single
+//! `.case.toml` interactively:
+//!
+//! ```text
+//! cargo run -p fredshell-spec-runner -- run tests/spec/.../foo.case.toml
+//! ```
+//!
+//! Exit codes:
+//!
+//! - `0` — case verdict was [`CaseVerdict::ExpectedPass`],
+//!   [`CaseVerdict::ExpectedFail`], [`CaseVerdict::WontfixHonored`],
+//!   [`CaseVerdict::DeferredHonored`], or [`CaseVerdict::Reclassify`].
+//!   The §12 taxonomy says none of these fail CI; `Reclassify` prints
+//!   the advisory line and exits clean.
+//! - `1` — case verdict was [`CaseVerdict::Regression`]. A `pass`
+//!   case no longer passes.
+//! - `64` — case file or fixture failed to load (usage error,
+//!   conventionally `EX_USAGE` from `sysexits.h`).
+//! - `70` — executor produced an error the harness cannot map
+//!   (`SpecError::Executor`; conventionally `EX_SOFTWARE`).
+
+#![forbid(unsafe_code)]
+// The binary owns its own error handling; the helper functions below
+// return typed `Result` and `main` translates them to process exit
+// codes. No `anyhow` (per AGENTS.md library-crate policy).
+
+use std::path::PathBuf;
+use std::process::ExitCode;
+
+use clap::{Parser, Subcommand};
+
+use fredshell_spec_runner::{Case, CaseOutcome, CaseVerdict, SpecError, classify, run_case};
+
+#[derive(Debug, Parser)]
+#[command(
+    name = "fredshell-spec-runner",
+    about = "Single-case driver for the fredshell spec corpus (PLAN_05)",
+    version
+)]
+struct Cli {
+    #[command(subcommand)]
+    command: Command,
+}
+
+#[derive(Debug, Subcommand)]
+enum Command {
+    /// Load and execute one `.case.toml` file.
+    Run {
+        /// Path to the `.case.toml` file.
+        path: PathBuf,
+    },
+}
+
+fn main() -> ExitCode {
+    let cli = Cli::parse();
+    match cli.command {
+        Command::Run { path } => run_one(&path),
+    }
+}
+
+fn run_one(path: &std::path::Path) -> ExitCode {
+    let case = match Case::load(path) {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("error: failed to load case: {e}");
+            return ExitCode::from(64);
+        }
+    };
+
+    let result = match run_case(&case) {
+        Ok(r) => r,
+        Err(SpecError::Load(e)) => {
+            // Load errors should already have surfaced above; reaching
+            // here means a sidecar failure inside run_case. Still a
+            // usage error.
+            eprintln!("error: sidecar load failure: {e}");
+            return ExitCode::from(64);
+        }
+        Err(SpecError::Sandbox { path, source }) => {
+            eprintln!("error: sandbox failure at {}: {source}", path.display());
+            return ExitCode::from(70);
+        }
+        Err(SpecError::Executor(e)) => {
+            eprintln!("error: executor failure: {e}");
+            return ExitCode::from(70);
+        }
+        // `SpecError` is `#[non_exhaustive]`; future variants default
+        // to the software-error exit code until they get explicit
+        // handling.
+        Err(other) => {
+            eprintln!("error: {other}");
+            return ExitCode::from(70);
+        }
+    };
+
+    let verdict = classify(&case.status, &result.outcome);
+    render_outcome(path, &result.outcome);
+    render_verdict(&verdict);
+
+    if verdict.is_ci_failure() {
+        ExitCode::from(1)
+    } else {
+        ExitCode::SUCCESS
+    }
+}
+
+fn render_outcome(path: &std::path::Path, outcome: &CaseOutcome) {
+    match outcome {
+        CaseOutcome::Pass => {
+            println!("outcome: pass ({})", path.display());
+        }
+        CaseOutcome::Mismatch {
+            observed_stdout,
+            observed_stderr,
+            observed_exit,
+        } => {
+            println!("outcome: mismatch ({})", path.display());
+            println!("  observed exit: {observed_exit}");
+            println!(
+                "  observed stdout ({} bytes): {}",
+                observed_stdout.len(),
+                String::from_utf8_lossy(observed_stdout),
+            );
+            println!(
+                "  observed stderr ({} bytes): {}",
+                observed_stderr.len(),
+                String::from_utf8_lossy(observed_stderr),
+            );
+        }
+        CaseOutcome::ExecutorRefused { command, reason } => {
+            println!(
+                "outcome: executor refused ({}): `{command}` ({reason})",
+                path.display()
+            );
+        }
+        // `CaseOutcome` is `#[non_exhaustive]`; fall through with a
+        // diagnostic so a developer notices unhandled future variants.
+        _ => println!("outcome: unknown ({})", path.display()),
+    }
+}
+
+fn render_verdict(verdict: &CaseVerdict) {
+    match verdict {
+        CaseVerdict::ExpectedPass => println!("verdict: expected-pass"),
+        CaseVerdict::Regression => println!("verdict: REGRESSION"),
+        CaseVerdict::ExpectedFail => println!("verdict: expected-fail"),
+        CaseVerdict::WontfixHonored => println!("verdict: wontfix-honored"),
+        CaseVerdict::DeferredHonored { plan } => {
+            println!("verdict: deferred-honored ({plan})");
+        }
+        CaseVerdict::Reclassify {
+            from,
+            suggested,
+            reason,
+        } => {
+            // §12.1 emits `RECLASSIFY` as a distinct prefix so log
+            // scrapers can grep for it. Keep the suggested transition
+            // human-readable on the same line.
+            println!("RECLASSIFY: from `{from}` to `{suggested}` — {reason}");
+        }
+        // Future variants: stay quiet about exit code (default 0)
+        // but surface the variant name so the developer notices.
+        _ => println!("verdict: unknown"),
+    }
+}

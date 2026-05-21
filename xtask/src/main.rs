@@ -9,6 +9,8 @@
 //!   check     — cargo fmt --check, clippy, test, doc
 //!   pc        — pre-commit equivalent (invoked from the nix devshell)
 //!   coverage  — cargo llvm-cov producing lcov.info
+//!   compat    — bash-compat spec corpus driver (`PLAN_05` 05.6)
+//!   spec      — bash-compat spec harness subcommands (`PLAN_05`)
 //!   tty-probe — open a `TerminalSession` against the developer's real
 //!               controlling terminal and print the detected
 //!               `Capabilities` + initial `WindowSize`. Per `PLAN_04`
@@ -19,6 +21,9 @@ use clap::{Parser, Subcommand};
 use color_eyre::eyre::{bail, Result};
 use duct::cmd;
 use fredshell_core::tty::TerminalSession;
+
+mod compat;
+mod spec;
 
 #[derive(Parser)]
 struct Cli {
@@ -42,6 +47,14 @@ enum Cmd {
     /// Diagnostic tool described in `PLAN_04` §9. Must be run from an
     /// interactive terminal — fails fast in CI / non-tty contexts.
     TtyProbe,
+    /// Bash-compat spec harness subcommands (`PLAN_05`).
+    Spec {
+        #[command(subcommand)]
+        cmd: spec::SpecCmd,
+    },
+    /// Run the bash-compat spec corpus and emit a verdict report
+    /// (`PLAN_05` 05.6).
+    Compat(compat::CompatArgs),
 }
 
 fn main() -> Result<()> {
@@ -61,6 +74,12 @@ fn main() -> Result<()> {
             cmd!("cargo", "clippy", "--all-targets", "--", "-D", "warnings").run()?;
             cmd!("cargo-machete").run()?;
             cmd!("cargo", "test", "--workspace").run()?;
+            // `PLAN_05` 05.11: every commit verifies `COMPAT.md` is
+            // in sync with the current corpus. Runs the corpus
+            // through xtask compat in `--check-readme` mode; any
+            // drift fails the commit with a message pointing to
+            // `cargo xtask compat --update-readme`.
+            cmd!("cargo", "xtask", "compat", "--check-readme").run()?;
         }
         Cmd::Coverage => {
             cmd!(
@@ -78,6 +97,12 @@ fn main() -> Result<()> {
         }
         Cmd::TtyProbe => {
             run_tty_probe()?;
+        }
+        Cmd::Spec { cmd } => {
+            spec::run(&cmd)?;
+        }
+        Cmd::Compat(args) => {
+            compat::run(&args)?;
         }
     }
 

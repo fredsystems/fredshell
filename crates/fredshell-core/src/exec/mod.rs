@@ -17,22 +17,25 @@
 //!   `ExecError`, `ExitStatus`).
 //! - [`env`] — [`ExecEnv`] and its constructors.
 //! - [`builtin`] — [`Tier2Builtin`] trait shape (definitions only).
-//! - [`testing`] — crate-internal output-capture hook used by
-//!   `PLAN_05`'s harness; removed when `PLAN_06b` lands real stdio
-//!   on `ExecEnv`.
+//! - `testing` (test-only) — crate-internal capture helper that owns
+//!   a pair of [`Vec<u8>`] buffers and exposes them as [`Write`] sinks
+//!   for the `PLAN_05` spec harness. Gated to `#[cfg(test)]` until
+//!   the harness crate (05.4) promotes it behind a cargo feature.
 //!
-//! See `PLAN_06a` §3 for the stub dispatcher's contract and §6 for
-//! the testing hook's rationale.
+//! See `PLAN_06a` §3 for the stub dispatcher's contract and `PLAN_05`
+//! §5.2 for the stdio plumbing it routes through.
 
 pub mod builtin;
 pub mod env;
 pub mod error;
+#[cfg(test)]
 pub(crate) mod testing;
 
 pub use builtin::{Tier2Builtin, Tier2Ctx, Tier2Error};
-pub use env::ExecEnv;
-pub use error::{ExecError, ExitStatus, RunError, RunResult};
+pub use env::{ExecEnv, ExternalCommandPolicy};
+pub use error::{ExecError, ExitStatus, NoExternalExecutorReason, RunError, RunResult};
 
+use std::io::Write;
 use std::process::{Command, Stdio};
 
 use crate::builtins::{self, BuiltinOutcome};
@@ -108,21 +111,17 @@ pub fn run_source(source: &str, env: &mut ExecEnv) -> Result<RunResult, RunError
 /// all (e.g. `/bin/sh` cannot be spawned). Per-line non-zero exit
 /// codes propagate via [`RunResult::status`].
 pub fn run_script(script: &Script, env: &mut ExecEnv) -> Result<RunResult, RunError> {
-    dispatch_script(script, env, &mut Capture::Inherit)
+    dispatch_script(script, env)
 }
 
-/// Stub dispatcher shared by [`run_script`] and the testing capture
-/// hook in [`testing`].
+/// Stub dispatcher shared by [`run_script`] and the harness's capture
+/// helper in the `testing` module (test-only).
 ///
 /// Walks the script's source line by line, skipping blank lines,
 /// delegating each surviving line to [`dispatch_line`]. The exit
 /// status of the last executed line is the script's status; an
 /// `exit` builtin short-circuits with its requested code.
-pub(crate) fn dispatch_script(
-    script: &Script,
-    env: &mut ExecEnv,
-    capture: &mut Capture<'_>,
-) -> Result<RunResult, RunError> {
+pub(crate) fn dispatch_script(script: &Script, env: &mut ExecEnv) -> Result<RunResult, RunError> {
     let mut status = ExitStatus::SUCCESS;
     let mut exit_requested = false;
     for raw_line in script.source().split('\n') {
@@ -130,7 +129,7 @@ pub(crate) fn dispatch_script(
         if line.is_empty() {
             continue;
         }
-        match dispatch_line(line, env, capture)? {
+        match dispatch_line(line, env)? {
             LineOutcome::Continue(s) => status = s,
             LineOutcome::Exit(s) => {
                 status = s;
@@ -156,88 +155,89 @@ enum LineOutcome {
     Exit(ExitStatus),
 }
 
-/// Where the dispatcher should send a child process's stdio.
-///
-/// `Inherit` is the binary REPL's path: the child inherits the
-/// shell's stdio. `Buffers` is the harness's path: the dispatcher
-/// pipes stdout/stderr into the provided buffers.
-///
-/// Builtins (`cd`, `exit`) do not flow through this enum in v0:
-/// they mutate process state directly and write any diagnostics to
-/// the process's real `stderr`. `PLAN_06b` rewrites builtins to take
-/// `Box<dyn Write>` and the carve-out goes away.
-pub(crate) enum Capture<'a> {
-    /// Inherit the parent's stdio. Binary REPL path.
-    Inherit,
-    /// Pipe child stdout/stderr into these buffers. Harness path.
-    // TODO(PLAN_05): consumed by the spec harness via
-    // `testing::run_source_capturing`. Until the harness ships in
-    // PLAN_05 the variant is reachable only from tests, so clippy's
-    // dead-code lint fires. Allowed per AGENTS.md "temporary
-    // refactor" exception.
-    #[allow(dead_code)]
-    Buffers {
-        /// Captured child stdout, appended on each spawned command.
-        stdout: &'a mut Vec<u8>,
-        /// Captured child stderr, appended on each spawned command.
-        stderr: &'a mut Vec<u8>,
-    },
-}
-
 /// Execute one line: builtin lookup first, fall back to `/bin/sh -c`.
-fn dispatch_line(
-    line: &str,
-    _env: &mut ExecEnv,
-    capture: &mut Capture<'_>,
-) -> Result<LineOutcome, RunError> {
+///
+/// The fallback step is governed by [`ExecEnv::external_command_policy`]
+/// (introduced by `PLAN_05` §4.2). When the policy is
+/// [`ExternalCommandPolicy::Strict`] the dispatcher refuses to spawn
+/// `/bin/sh` and surfaces [`ExecError::NoExternalExecutor`] instead.
+///
+/// Child stdout/stderr is routed through [`ExecEnv::stdout`] /
+/// [`ExecEnv::stderr`] (`PLAN_05` §5.2). The binary REPL leaves those
+/// pointed at process stdio; the spec harness points them at capture
+/// buffers.
+fn dispatch_line(line: &str, env: &mut ExecEnv) -> Result<LineOutcome, RunError> {
     // Tokenise for builtin dispatch only. The full line is handed
     // verbatim to `/bin/sh -c` on fallback so the shell does its
     // own quoting/expansion.
     let argv: Vec<String> = match shell_words::split(line) {
         Ok(v) => v,
         Err(_) => {
-            // Tokeniser failed (e.g. unterminated quote). v0 hands
-            // it straight to /bin/sh so its error reporting is
-            // authoritative; PLAN_06b reports via ParseError.
-            return spawn_via_sh(line, capture).map(LineOutcome::Continue);
+            // Tokeniser failed (e.g. unterminated quote). In
+            // FallbackToSh mode v0 hands it straight to `/bin/sh`
+            // so its error reporting is authoritative; in Strict
+            // mode the executor refuses with UnparsableArgv.
+            // PLAN_06b reports the parse failure via ParseError
+            // and the carve-out goes away.
+            return match env.external_command_policy {
+                ExternalCommandPolicy::FallbackToSh => {
+                    spawn_via_sh(line, env).map(LineOutcome::Continue)
+                }
+                ExternalCommandPolicy::Strict => {
+                    Err(RunError::Exec(ExecError::NoExternalExecutor {
+                        command: line.to_owned(),
+                        reason: NoExternalExecutorReason::UnparsableArgv,
+                    }))
+                }
+            };
         }
     };
 
     match builtins::try_run(&argv).map_err(|e| RunError::Exec(core_error_to_exec(e)))? {
         Some(BuiltinOutcome::Exit(code)) => Ok(LineOutcome::Exit(ExitStatus(code))),
         Some(BuiltinOutcome::Handled(code)) => Ok(LineOutcome::Continue(ExitStatus(code))),
-        None => spawn_via_sh(line, capture).map(LineOutcome::Continue),
+        None => match env.external_command_policy {
+            ExternalCommandPolicy::FallbackToSh => {
+                spawn_via_sh(line, env).map(LineOutcome::Continue)
+            }
+            ExternalCommandPolicy::Strict => Err(RunError::Exec(ExecError::NoExternalExecutor {
+                command: line.to_owned(),
+                reason: NoExternalExecutorReason::PolicyStrict,
+            })),
+        },
     }
 }
 
-/// Spawn `/bin/sh -c <line>` honouring the configured [`Capture`].
-fn spawn_via_sh(line: &str, capture: &mut Capture<'_>) -> Result<ExitStatus, RunError> {
+/// Spawn `/bin/sh -c <line>`, piping child stdio into the writers on
+/// `env`.
+///
+/// v0 always pipes — even when the writers point at process stdio —
+/// so the dispatcher has a single code path. The cost is one extra
+/// copy per command, which `PLAN_06b` removes by handing the child
+/// inherited file descriptors when the writers are known to be the
+/// real stdio. See `PLAN_05` §5.2 and `PLAN_06a` §9 for the budget.
+fn spawn_via_sh(line: &str, env: &mut ExecEnv) -> Result<ExitStatus, RunError> {
     let mut cmd = Command::new("/bin/sh");
-    cmd.arg("-c").arg(line);
+    cmd.arg("-c")
+        .arg(line)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
 
-    match capture {
-        Capture::Inherit => {
-            let status = cmd.status().map_err(|e| {
-                RunError::Exec(ExecError::HostIo(std::io::Error::new(
-                    e.kind(),
-                    format!("failed to spawn /bin/sh: {e}"),
-                )))
-            })?;
-            Ok(ExitStatus(status.code().unwrap_or(-1)))
-        }
-        Capture::Buffers { stdout, stderr } => {
-            cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
-            let output = cmd.output().map_err(|e| {
-                RunError::Exec(ExecError::HostIo(std::io::Error::new(
-                    e.kind(),
-                    format!("failed to spawn /bin/sh: {e}"),
-                )))
-            })?;
-            stdout.extend_from_slice(&output.stdout);
-            stderr.extend_from_slice(&output.stderr);
-            Ok(ExitStatus(output.status.code().unwrap_or(-1)))
-        }
-    }
+    let output = cmd.output().map_err(|e| {
+        RunError::Exec(ExecError::HostIo(std::io::Error::new(
+            e.kind(),
+            format!("failed to spawn /bin/sh: {e}"),
+        )))
+    })?;
+
+    env.stdout
+        .write_all(&output.stdout)
+        .map_err(|e| RunError::Exec(ExecError::HostIo(e)))?;
+    env.stderr
+        .write_all(&output.stderr)
+        .map_err(|e| RunError::Exec(ExecError::HostIo(e)))?;
+
+    Ok(ExitStatus(output.status.code().unwrap_or(-1)))
 }
 
 /// Map a [`CoreError`] surfaced by the builtin layer to an
@@ -269,7 +269,13 @@ mod tests {
     use std::path::PathBuf;
 
     fn sandbox() -> ExecEnv {
-        ExecEnv::sandboxed(PathBuf::from("/tmp"))
+        // The dispatcher tests below were written before strict mode
+        // existed; they assert the v0 fallback-to-sh behavior. Opt
+        // back into fallback so they keep exercising that surface.
+        // Tests that want strict construct their env inline.
+        let mut env = ExecEnv::sandboxed(PathBuf::from("/tmp"));
+        env.external_command_policy = ExternalCommandPolicy::FallbackToSh;
+        env
     }
 
     /// Serialise any test that spawns `/bin/sh` or mutates
@@ -492,5 +498,101 @@ mod tests {
             }
             other => panic!("expected InternalInvariant, got {other:?}"),
         }
+    }
+
+    // --- PLAN_05 §4.2 strict execution mode ----------------------
+
+    /// Build a strict-mode sandbox: refuses any external command.
+    fn strict_sandbox() -> ExecEnv {
+        let env = ExecEnv::sandboxed(PathBuf::from("/tmp"));
+        // Sanity-check the default; if `sandboxed()`'s default
+        // changes, the rest of these tests will silently lose their
+        // meaning.
+        assert_eq!(env.external_command_policy, ExternalCommandPolicy::Strict);
+        env
+    }
+
+    #[test]
+    fn strict_mode_refuses_external_command() {
+        let _g = lock();
+        let mut env = strict_sandbox();
+        let err = run_source("/bin/echo hi\n", &mut env)
+            .expect_err("strict must refuse external command");
+        match err {
+            RunError::Exec(ExecError::NoExternalExecutor { command, reason }) => {
+                assert_eq!(command, "/bin/echo hi");
+                assert_eq!(reason, NoExternalExecutorReason::PolicyStrict);
+            }
+            other => panic!("expected NoExternalExecutor, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn strict_mode_refuses_unknown_command_with_policy_strict_reason() {
+        let _g = lock();
+        let mut env = strict_sandbox();
+        let err = run_source("definitely-not-a-real-command-fredshell-strict\n", &mut env)
+            .expect_err("strict must refuse");
+        match err {
+            RunError::Exec(ExecError::NoExternalExecutor { command, reason }) => {
+                assert_eq!(command, "definitely-not-a-real-command-fredshell-strict");
+                assert_eq!(reason, NoExternalExecutorReason::PolicyStrict);
+            }
+            other => panic!("expected NoExternalExecutor, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn strict_mode_refuses_unparsable_argv_with_unparsable_reason() {
+        let _g = lock();
+        let mut env = strict_sandbox();
+        let err = run_source("echo 'unterminated\n", &mut env)
+            .expect_err("strict must refuse unparsable argv");
+        match err {
+            RunError::Exec(ExecError::NoExternalExecutor { command, reason }) => {
+                assert_eq!(command, "echo 'unterminated");
+                assert_eq!(reason, NoExternalExecutorReason::UnparsableArgv);
+            }
+            other => panic!("expected NoExternalExecutor(UnparsableArgv), got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn strict_mode_still_runs_builtins() {
+        // `exit` is a native builtin and must not be affected by
+        // strict mode.
+        let _g = lock();
+        let mut env = strict_sandbox();
+        let r = run_source("exit 7\n", &mut env).expect("builtin runs under strict");
+        assert_eq!(r.status, ExitStatus(7));
+        assert!(r.exit_requested);
+    }
+
+    #[test]
+    fn strict_mode_aborts_on_first_external_command() {
+        // The script has a builtin then an external; the dispatcher
+        // must run the builtin and then fail on the external rather
+        // than silently skipping.
+        let _g = lock();
+        let mut env = strict_sandbox();
+        let err = run_source("cd /tmp\ntrue\n", &mut env)
+            .expect_err("strict refuses external after builtin");
+        match err {
+            RunError::Exec(ExecError::NoExternalExecutor { command, .. }) => {
+                assert_eq!(command, "true");
+            }
+            other => panic!("expected NoExternalExecutor on `true`, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn fallback_mode_still_falls_back() {
+        // Belt-and-braces: when the policy is explicitly
+        // FallbackToSh, external commands still spawn /bin/sh.
+        let _g = lock();
+        let mut env = ExecEnv::sandboxed(PathBuf::from("/tmp"));
+        env.external_command_policy = ExternalCommandPolicy::FallbackToSh;
+        let r = run_source("true\n", &mut env).expect("fallback path runs `true`");
+        assert_eq!(r.status, ExitStatus::SUCCESS);
     }
 }

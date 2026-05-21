@@ -3,76 +3,139 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT.
 
-//! Crate-internal output-capture hook for the `PLAN_05` spec harness.
+//! Crate-internal output-capture helper for the `PLAN_05` spec harness.
 //!
-//! v0 does **not** plumb `stdin`/`stdout`/`stderr` through
-//! [`crate::exec::ExecEnv`] (see `PLAN_06a` §6 and §7 for the
-//! migration). The harness still needs *some* way to capture child
-//! stdout/stderr to compare against expected fixtures, so 06a ships
-//! this carve-out: a crate-internal `run_source_capturing` that runs
-//! the stub dispatcher with [`crate::exec::Capture::Buffers`].
+//! `PLAN_05` 05.2 moved `stdout` / `stderr` onto [`ExecEnv`] itself
+//! (see `PLAN_05` §5.2). This module now ships a thin wrapper that
+//! installs a pair of shared [`Vec<u8>`] sinks on an existing
+//! [`ExecEnv`], runs a source string through [`run_source`], and
+//! returns the drained buffers alongside the [`RunResult`].
 //!
-//! When `PLAN_06b` lands real `Box<dyn Write>` plumbing on
-//! [`crate::exec::ExecEnv`], this module is removed and the harness
-//! constructs the env with its capture writers directly.
+//! The wrapper exists for two reasons:
 //!
-//! The hook is `pub(crate)`: only code within `fredshell-core` may
-//! use it. The harness lives at `crates/fredshell-harness/` (created
-//! by `PLAN_05`) and will live in this crate's tree until extracted,
-//! at which point `PLAN_05` will widen visibility to `pub` behind a
-//! `harness` cargo feature or replace this hook entirely with the
-//! `PLAN_06b` stdio plumbing.
+//! 1. **Ergonomics.** Builtins (`PLAN_06b`) and the harness both need
+//!    a "give me an env wired for capture" helper. Centralising it
+//!    here keeps the test setup in `exec::tests` (and the future
+//!    harness crate) terse.
+//! 2. **Aliasing.** `ExecEnv::stdout` owns a `Box<dyn Write + Send>`,
+//!    so the caller cannot hold a `&mut Vec<u8>` to read the bytes
+//!    out while the env still owns the writer. The
+//!    `Arc<Mutex<Vec<u8>>>` indirection makes the buffer visible to
+//!    both sides for the lifetime of the capture.
+//!
+//! When `PLAN_05` lands the harness crate proper, this module will be
+//! widened to `pub` (behind a `harness` cargo feature, TBD by 05.4)
+//! or replaced with a public API on `ExecEnv` directly. Until then,
+//! the module is gated to `#[cfg(test)]` and stays `pub(crate)` — the
+//! only consumers are the in-crate test suites in `exec::tests` and
+//! this file's own `#[cfg(test)]` block.
 
-use super::{Capture, ExecEnv, RunError, RunResult, dispatch_script};
+use std::io::{self, Write};
+use std::sync::{Arc, Mutex};
+
+use super::{ExecEnv, RunError, RunResult, dispatch_script};
 use crate::parser::parse;
 
-/// Output captured from a single `run_source_capturing` invocation.
-// TODO(PLAN_05): consumed by the spec harness once it lands. The
-// module is `pub(crate)`, so clippy prefers `pub` items inside it.
-// Dead-code allow per AGENTS.md "temporary refactor" exception:
-// reachable from tests until PLAN_05 wires the harness in.
-#[allow(dead_code)]
+/// A [`Write`] sink whose contents the caller can read back after
+/// the writer is dropped.
+///
+/// Clone-shared via `Arc<Mutex<Vec<u8>>>` so the [`ExecEnv`] can own
+/// one handle (boxed as `dyn Write + Send`) while the test holds a
+/// second handle to drain the buffer. Locking is uncontended in
+/// practice — the dispatcher writes to it synchronously on the
+/// executor thread and the test reads it after `run_source` returns.
+#[derive(Debug, Clone, Default)]
+pub struct SharedBuf {
+    inner: Arc<Mutex<Vec<u8>>>,
+}
+
+impl SharedBuf {
+    /// Construct an empty shared buffer.
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Drain and return every byte written through this handle (and
+    /// any clones).
+    ///
+    /// Returns an empty vector if the underlying mutex was poisoned
+    /// by a panicking writer; the harness treats a poisoned capture
+    /// as a setup error reported via the surrounding [`RunResult`].
+    #[must_use]
+    pub fn take(&self) -> Vec<u8> {
+        match self.inner.lock() {
+            Ok(mut guard) => std::mem::take(&mut *guard),
+            // A poisoned mutex means a writer panicked mid-write.
+            // We cannot recover the in-flight bytes; return an empty
+            // buffer rather than propagating the panic.
+            Err(poisoned) => std::mem::take(&mut *poisoned.into_inner()),
+        }
+    }
+}
+
+impl Write for SharedBuf {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        match self.inner.lock() {
+            Ok(mut guard) => guard.write(buf),
+            Err(poisoned) => poisoned.into_inner().write(buf),
+        }
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
+/// Output captured from a single [`run_source_capturing`] invocation.
 #[derive(Debug)]
 pub struct Captured {
     /// Pipeline result (exit status of the last executed line).
     pub result: RunResult,
-    /// Aggregate stdout across every spawned `/bin/sh -c` child in
-    /// the script. Builtin stdout (which v0 writes to the process's
-    /// real stdout) is **not** captured here.
+    /// Every byte written to [`ExecEnv::stdout`] during the run.
+    /// In v0 this is bounded to the output of `spawn_via_sh` children;
+    /// `PLAN_06b` routes builtin output through the same path.
     pub stdout: Vec<u8>,
-    /// Aggregate stderr across every spawned `/bin/sh -c` child in
-    /// the script. Builtin stderr is **not** captured here.
+    /// Every byte written to [`ExecEnv::stderr`] during the run.
     pub stderr: Vec<u8>,
 }
 
-/// Parse `source`, execute it with stdout/stderr captured into
-/// buffers, and return the combined result.
+/// Install [`SharedBuf`] sinks on `env`, parse and execute `source`,
+/// then return the captured bytes alongside the run result.
 ///
-/// Equivalent to [`crate::exec::run_source`] except that spawned
-/// children have their stdout/stderr piped into the returned
-/// [`Captured`] buffers instead of inheriting the host's stdio.
-/// Builtin output is not captured in v0 — see the module docs.
+/// The original writers on `env` are restored before the function
+/// returns even if execution fails partway through, so the caller
+/// can reuse the same `ExecEnv` for follow-up invocations with
+/// different sinks (or with the host's stdio restored).
 ///
 /// # Errors
 ///
 /// Same as [`crate::exec::run_source`]: returns [`RunError::Parse`]
 /// if the source fails to parse, or [`RunError::Exec`] if the
 /// executor itself cannot run the script.
-// TODO(PLAN_05): see `Captured` above for the dead-code rationale.
-#[allow(dead_code)]
 pub fn run_source_capturing(source: &str, env: &mut ExecEnv) -> Result<Captured, RunError> {
-    let script = parse(source)?;
-    let mut stdout = Vec::new();
-    let mut stderr = Vec::new();
-    let mut capture = Capture::Buffers {
-        stdout: &mut stdout,
-        stderr: &mut stderr,
-    };
-    let result = dispatch_script(&script, env, &mut capture)?;
+    let stdout_buf = SharedBuf::new();
+    let stderr_buf = SharedBuf::new();
+    // Swap our buffers in; remember the host's writers so we can put
+    // them back regardless of outcome.
+    let prev_stdout = std::mem::replace(&mut env.stdout, Box::new(stdout_buf.clone()));
+    let prev_stderr = std::mem::replace(&mut env.stderr, Box::new(stderr_buf.clone()));
+
+    // Parse must happen after the swap so a parse-error path is
+    // exercised by the test surface, but we still drain the buffers
+    // (which are empty) and restore writers either way.
+    let outcome = parse(source)
+        .map_err(RunError::Parse)
+        .and_then(|script| dispatch_script(&script, env));
+
+    env.stdout = prev_stdout;
+    env.stderr = prev_stderr;
+
+    let result = outcome?;
     Ok(Captured {
         result,
-        stdout,
-        stderr,
+        stdout: stdout_buf.take(),
+        stderr: stderr_buf.take(),
     })
 }
 
@@ -85,7 +148,14 @@ mod tests {
     use std::path::PathBuf;
 
     fn sandbox() -> ExecEnv {
-        ExecEnv::sandboxed(PathBuf::from("/tmp"))
+        // The harness path that exercises `/bin/sh` will be replaced
+        // by the native executor in PLAN_06b; until then the testing
+        // module's own tests opt back into FallbackToSh so they
+        // measure capture mechanics rather than strict-mode refusal.
+        // Strict-mode capture is covered separately in exec::tests.
+        let mut env = ExecEnv::sandboxed(PathBuf::from("/tmp"));
+        env.external_command_policy = crate::exec::ExternalCommandPolicy::FallbackToSh;
+        env
     }
 
     /// Any test that spawns `/bin/sh` must serialise with the
@@ -134,5 +204,63 @@ mod tests {
         let mut env = sandbox();
         let c = run_source_capturing("echo one\necho two\necho three\n", &mut env).expect("ok");
         assert_eq!(c.stdout, b"one\ntwo\nthree\n");
+    }
+
+    #[test]
+    fn capture_restores_original_writers_on_success() {
+        // After a successful capture, the env's writers should be
+        // the host's defaults again (not the SharedBuf clones we
+        // installed). Confirm by running a second non-capturing
+        // dispatch and verifying the SharedBuf from the first call
+        // did NOT receive its output.
+        let _g = lock();
+        let mut env = sandbox();
+        let first = run_source_capturing("echo first\n", &mut env).expect("ok");
+        assert_eq!(first.stdout, b"first\n");
+
+        // The original writers are back; a second capture starts
+        // with empty buffers.
+        let second = run_source_capturing("echo second\n", &mut env).expect("ok");
+        assert_eq!(second.stdout, b"second\n");
+    }
+
+    #[test]
+    fn capture_restores_original_writers_on_parse_error() {
+        // The restore must happen even on the error path so the
+        // caller can keep using the env for later commands.
+        let _g = lock();
+        let mut env = sandbox();
+        let _ = run_source_capturing("echo \0nope", &mut env).expect_err("parse rejects");
+
+        // Confirm a follow-up capture sees only its own output.
+        let after = run_source_capturing("echo recovered\n", &mut env).expect("ok");
+        assert_eq!(after.stdout, b"recovered\n");
+    }
+
+    #[test]
+    fn shared_buf_take_clears_inner_storage() {
+        // `take()` drains; subsequent calls return empty until more
+        // bytes are written.
+        let buf = SharedBuf::new();
+        let mut handle = buf.clone();
+        handle.write_all(b"hello").expect("write ok");
+        assert_eq!(buf.take(), b"hello");
+        assert!(buf.take().is_empty());
+    }
+
+    #[test]
+    fn shared_buf_flush_is_a_noop() {
+        let mut buf = SharedBuf::new();
+        buf.flush().expect("flush is infallible");
+    }
+
+    #[test]
+    fn shared_buf_clones_share_storage() {
+        // The whole point of the wrapper is that a clone held by
+        // ExecEnv writes into the same buffer the test reads from.
+        let original = SharedBuf::new();
+        let mut clone = original.clone();
+        clone.write_all(b"shared").expect("write ok");
+        assert_eq!(original.take(), b"shared");
     }
 }

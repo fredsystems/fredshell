@@ -1,0 +1,4 @@
+description = "A script of only blank lines exits 0 with no output"
+script = "\n\n\n"
+status = "pass"
+tags = ["smoke", "blank-lines"]

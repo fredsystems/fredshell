@@ -1,0 +1,6 @@
+description = "Brace expansion `{1..5}` expands to a space-separated numeric sequence"
+script = """
+echo {1..5}
+"""
+status = "deferred:PLAN_06b"
+tags = ["expansions", "brace-expansion"]

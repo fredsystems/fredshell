@@ -1,0 +1,9 @@
+description = "A user-defined function receives positional parameters via `$1`"
+script = """
+greet() {
+    echo "hi $1"
+}
+greet world
+"""
+status = "deferred:PLAN_06b"
+tags = ["functions", "posix-overlap"]

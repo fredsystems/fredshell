@@ -1,0 +1,6 @@
+description = "`exit abc` rejects the non-numeric argument: bash prints a diagnostic and exits 2"
+script = """
+exit abc
+"""
+status = "deferred:PLAN_06b"
+tags = ["builtin", "exit", "diagnostic"]

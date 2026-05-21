@@ -101,6 +101,40 @@ pub enum RunError {
     Exec(ExecError),
 }
 
+/// Why a [`ExecError::NoExternalExecutor`] was raised.
+///
+/// `PLAN_05` §4.2 introduces *strict execution mode*: when an
+/// `ExecEnv` is configured with
+/// [`ExternalCommandPolicy::Strict`](crate::exec::ExternalCommandPolicy::Strict)
+/// the dispatcher refuses to fall back to `/bin/sh -c` for commands
+/// the native executor does not yet handle. The harness uses this so
+/// it can never silently inherit bash semantics it has not vendored.
+///
+/// `PLAN_06b` removes the policy field once native execve lands;
+/// strict mode then becomes unconditional and this enum loses its
+/// "policy set strict" variants.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum NoExternalExecutorReason {
+    /// The `ExecEnv` is in strict mode and the command is not a
+    /// builtin known to this v0 executor.
+    PolicyStrict,
+    /// The argv could not be tokenised. In v0's fallback mode the
+    /// dispatcher hands the unparsed line to `/bin/sh`; in strict
+    /// mode there is no fallback so the executor reports the
+    /// tokenisation failure as a refusal to run.
+    UnparsableArgv,
+}
+
+impl fmt::Display for NoExternalExecutorReason {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::PolicyStrict => f.write_str("strict execution policy"),
+            Self::UnparsableArgv => f.write_str("argv could not be tokenised"),
+        }
+    }
+}
+
 /// Runtime failure produced by the executor.
 ///
 /// These are categorical failures of the executor itself: a command
@@ -123,6 +157,19 @@ pub enum ExecError {
     InternalInvariant {
         /// Short static description of the violated invariant.
         what: &'static str,
+    },
+    /// The dispatcher refuses to fall back to `/bin/sh -c` for a
+    /// command it does not natively handle.
+    ///
+    /// Raised in strict execution mode (`PLAN_05` §4.2). The
+    /// harness uses this to keep the spec corpus measuring
+    /// fredshell-as-itself rather than fredshell-plus-bash.
+    NoExternalExecutor {
+        /// The line the dispatcher was asked to execute. Verbatim
+        /// from the script; not tokenised.
+        command: String,
+        /// Why the dispatcher refused.
+        reason: NoExternalExecutorReason,
     },
 }
 
@@ -150,6 +197,9 @@ impl fmt::Display for ExecError {
             Self::CommandNotFound { name } => write!(f, "command not found: {name}"),
             Self::HostIo(_) => f.write_str("host I/O failure"),
             Self::InternalInvariant { what } => write!(f, "internal invariant violated: {what}"),
+            Self::NoExternalExecutor { command, reason } => {
+                write!(f, "no native executor for `{command}` (refused: {reason})")
+            }
         }
     }
 }
@@ -158,7 +208,9 @@ impl std::error::Error for ExecError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
             Self::HostIo(source) => Some(source),
-            Self::CommandNotFound { .. } | Self::InternalInvariant { .. } => None,
+            Self::CommandNotFound { .. }
+            | Self::InternalInvariant { .. }
+            | Self::NoExternalExecutor { .. } => None,
         }
     }
 }
@@ -257,6 +309,47 @@ mod tests {
         assert!(std::error::Error::source(&cnf).is_none());
         let inv = ExecError::InternalInvariant { what: "x" };
         assert!(std::error::Error::source(&inv).is_none());
+        let nex = ExecError::NoExternalExecutor {
+            command: "x".to_owned(),
+            reason: NoExternalExecutorReason::PolicyStrict,
+        };
+        assert!(std::error::Error::source(&nex).is_none());
+    }
+
+    #[test]
+    fn no_external_executor_display_policy_strict() {
+        let err = ExecError::NoExternalExecutor {
+            command: "rsync -av src dst".to_owned(),
+            reason: NoExternalExecutorReason::PolicyStrict,
+        };
+        assert_eq!(
+            format!("{err}"),
+            "no native executor for `rsync -av src dst` (refused: strict execution policy)"
+        );
+    }
+
+    #[test]
+    fn no_external_executor_display_unparsable_argv() {
+        let err = ExecError::NoExternalExecutor {
+            command: "echo 'unterminated".to_owned(),
+            reason: NoExternalExecutorReason::UnparsableArgv,
+        };
+        assert_eq!(
+            format!("{err}"),
+            "no native executor for `echo 'unterminated` (refused: argv could not be tokenised)"
+        );
+    }
+
+    #[test]
+    fn no_external_executor_reason_display() {
+        assert_eq!(
+            format!("{}", NoExternalExecutorReason::PolicyStrict),
+            "strict execution policy"
+        );
+        assert_eq!(
+            format!("{}", NoExternalExecutorReason::UnparsableArgv),
+            "argv could not be tokenised"
+        );
     }
 
     #[test]

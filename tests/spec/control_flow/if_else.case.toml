@@ -1,0 +1,10 @@
+description = "`if true; then ...; else ...; fi` takes the `then` branch"
+script = """
+if true; then
+    echo yes
+else
+    echo no
+fi
+"""
+status = "deferred:PLAN_06b"
+tags = ["control-flow", "if", "posix-overlap"]

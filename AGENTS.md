@@ -70,12 +70,13 @@ the code is a scaffold. Read the planning documents first.
 
 The workspace currently contains:
 
-| Crate              | Role                                            | `anyhow` allowed? |
-| ------------------ | ----------------------------------------------- | ----------------- |
-| `fredshell`        | Binary entrypoint, CLI, line editor integration | Yes               |
-| `fredshell-core`   | Builtins, exec, REPL state machine, parser glue | No                |
-| `fredshell-prompt` | Starship-style prompt renderer                  | No                |
-| `xtask`            | Build/CI orchestration                          | Yes               |
+| Crate                   | Role                                                                       | `anyhow` allowed? |
+| ----------------------- | -------------------------------------------------------------------------- | ----------------- |
+| `fredshell`             | Binary entrypoint, CLI, line editor integration                            | Yes               |
+| `fredshell-core`        | Builtins, exec, REPL state machine, parser glue                            | No                |
+| `fredshell-prompt`      | Starship-style prompt renderer                                             | No                |
+| `fredshell-spec-runner` | Spec harness: loads `*.case.toml`, runs against fredshell, compares output | No                |
+| `xtask`                 | Build/CI orchestration                                                     | Yes               |
 
 Additional crates will be added as the plan is executed. When a new crate is created,
 this table must be updated in the same commit.

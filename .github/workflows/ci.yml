@@ -3,6 +3,9 @@ name: CI
 on:
   pull_request:
   merge_group:
+  push:
+    branches:
+      - main
 
 permissions:
   contents: read
@@ -52,12 +55,47 @@ jobs:
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
       - run: cargo xtask check
 
+  compat:
+    name: Spec compat report
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          fetch-depth: 0
+
+      - name: Set up Determinate Nix
+        uses: DeterminateSystems/determinate-nix-action@bafaa638b9d5ec0e7e3ac1a7fc80453ef1fd265f # v3
+
+      - name: Use Determinate Cache
+        uses: DeterminateSystems/magic-nix-cache-action@565684385bcd71bad329742eefe8d12f2e765b39 # v13
+        with:
+          use-flakehub: false
+          use-gha-cache: false
+
+      - name: Run cargo xtask compat
+        run: |
+          nix develop --impure --command bash -e -c '
+            set -euxo pipefail
+            mkdir -p target
+            cargo xtask compat --json target/compat.json
+          '
+
+      - name: Upload compat report
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: compat-report
+          path: target/compat.json
+          if-no-files-found: error
+          retention-days: 30
+
   ci-success:
     name: CI Success
     runs-on: ubuntu-latest
     needs:
       - nix-checks
       - check
+      - compat
     if: always()
     steps:
       - run: |
@@ -66,5 +104,8 @@ jobs:
           fi
           if [[ "${{ needs.check.result }}" != "success" ]]; then
             echo "check matrix failed"; exit 1
+          fi
+          if [[ "${{ needs.compat.result }}" != "success" ]]; then
+            echo "compat failed"; exit 1
           fi
           echo "All CI jobs succeeded"

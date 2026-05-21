@@ -4,6 +4,20 @@
   inputs = {
     precommit.url = "github:FredSystems/pre-commit-checks";
     nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
+
+    # PLAN_05 §4.5 — pinned reference toolchain for the spec harness.
+    #
+    # `bash` and `coreutils` from this input define the v1 oracle for
+    # `cargo xtask spec record` and the bash-compat corpus. Pinned to
+    # an explicit rev so the reference does not drift when the
+    # floating `nixpkgs` input advances.
+    #
+    # Bump policy: bump deliberately, capturing the new versions in
+    # `tests/spec/REFERENCE.md` and re-recording any affected fixtures
+    # in the same commit. `cargo xtask spec versions` reports drift
+    # between this pin and the floating `nixpkgs` as advisory output.
+    nixpkgs-reference.url = "github:nixos/nixpkgs/d233902339c02a9c334e7e593de68855ad26c4cb";
+
     rust-overlay = {
       url = "github:oxalica/rust-overlay";
       inputs.nixpkgs.follows = "nixpkgs";
@@ -15,6 +29,7 @@
       self,
       precommit,
       nixpkgs,
+      nixpkgs-reference,
       rust-overlay,
       ...
     }:
@@ -40,6 +55,8 @@
             inherit system;
             overlays = [ rust-overlay.overlays.default ];
           };
+
+          referencePkgs = import nixpkgs-reference { inherit system; };
 
           rustToolchain = pkgs.rust-bin.stable.latest.default;
 
@@ -77,6 +94,13 @@
               platforms = platforms.unix;
             };
           };
+
+          # PLAN_05 §4.5 — pinned reference toolchain.
+          # Re-exposed as flake packages so the spec harness and CI
+          # can resolve them via `nix build .#bashReference` /
+          # `.#coreutilsReference` rather than hardcoding store paths.
+          bashReference = referencePkgs.bash;
+          coreutilsReference = referencePkgs.coreutils;
         }
       );
 
@@ -113,6 +137,7 @@
           value =
             let
               pkgs = import nixpkgs { inherit system; };
+              referencePkgs = import nixpkgs-reference { inherit system; };
 
               chk = self.checks.${system}."pre-commit-check";
 
@@ -137,6 +162,19 @@
             {
               default = pkgs.mkShell {
                 buildInputs = extraRustTools ++ corePkgs ++ extraDev;
+
+                # PLAN_05 §4.5 — expose the pinned reference toolchain
+                # to the spec harness via env vars. The harness reads
+                # FREDSHELL_REFERENCE_BASH / FREDSHELL_REFERENCE_COREUTILS
+                # instead of consulting PATH so the pin is explicit and
+                # cannot be shadowed by the host system bash (e.g.
+                # macOS bash 3.2).
+                FREDSHELL_REFERENCE_BASH = "${referencePkgs.bash}/bin/bash";
+                FREDSHELL_REFERENCE_COREUTILS = "${referencePkgs.coreutils}/bin";
+                FREDSHELL_REFERENCE_BASH_VERSION = referencePkgs.bash.version;
+                FREDSHELL_REFERENCE_COREUTILS_VERSION = referencePkgs.coreutils.version;
+                FREDSHELL_FLOATING_BASH_VERSION = pkgs.bash.version;
+                FREDSHELL_FLOATING_COREUTILS_VERSION = pkgs.coreutils.version;
 
                 shellHook = ''
                   ${chk.shellHook}

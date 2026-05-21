@@ -1,0 +1,6 @@
+description = "`$((expr))` evaluates a basic arithmetic expression with operator precedence"
+script = """
+echo $((2 + 3 * 4))
+"""
+status = "deferred:PLAN_06b"
+tags = ["arithmetic", "posix-overlap"]
