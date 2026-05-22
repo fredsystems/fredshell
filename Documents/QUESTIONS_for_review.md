@@ -92,3 +92,60 @@ checking; rely on `xtask check-specs` instead.
 **Why it matters:** compile-time check is stronger but couples
 compilation to sheet contents (every sheet edit triggers
 rebuilds of every builtin that refuses something).
+
+## PLAN_09 — Grammar-aware fuzzer + differential oracle
+
+### Q-09-1 — Fixed `umask` for fuzz processes
+
+**Doc:** PLAN_09 §11 Q09.1.
+**Default:** yes, `umask 022` for both fredshell and reference
+bash, documented in §2.3.
+**Alternative:** leave umask uncontrolled and add an output-mode
+redaction filter to the normaliser.
+**Why it matters:** mode bits in `ls -l` / `stat` output diverge
+under different umasks; fixing it is a one-line guarantee versus
+ongoing normaliser maintenance.
+
+### Q-09-2 — Oracle against `dash` and `mksh`?
+
+**Doc:** PLAN_09 §11 Q09.2.
+**Default:** not in v1; oracle API is shaped to support multiple
+references later.
+**Alternative:** add `dash` and `mksh` as additional reference
+shells from day one to surface bash-specific non-portability.
+**Why it matters:** POSIX-only divergences are informative but
+expand the divergence triage surface 3×. v1 is bash-only.
+
+### Q-09-3 — Functions and aliases in grammar
+
+**Doc:** PLAN_09 §11 Q09.3.
+**Default:** functions are in grammar; aliases are not (aliases
+interact poorly with our parser stage gating).
+**Alternative:** include aliases gated behind a separate weight
+profile.
+**Why it matters:** aliases double effective grammar depth and
+require special-casing in the minimiser; functions are
+self-contained.
+
+### Q-09-4 — Fuzz corpus subtree layout
+
+**Doc:** PLAN_09 §11 Q09.4.
+**Default:** separate `tests/spec/fuzz/<category>/` subtree;
+`[meta]` block records fuzz provenance.
+**Alternative:** interleave fuzz-derived cases with hand-written
+cases under the natural category (e.g.,
+`tests/spec/parameter_expansion/`).
+**Why it matters:** separation makes provenance grep-able and
+keeps hand-curated corpus density visible; interleaving better
+reflects "one category, one folder" mental model.
+
+### Q-09-5 — UTF-8 locale fuzz tier
+
+**Doc:** PLAN_09 §11 Q09.5.
+**Default:** `LC_ALL=C` only in v1; UTF-8 tier tracked as future
+work.
+**Alternative:** add a UTF-8 tier (e.g., F2-utf8) from v1 to
+catch `$'...'` and pattern-matching quirks early.
+**Why it matters:** locale-dependent behaviour is a known bash
+quirk surface; postponing it leaves a class of bugs uncovered
+until a later milestone.
