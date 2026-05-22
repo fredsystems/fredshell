@@ -40,7 +40,7 @@ where fredshell produces the same observable outputs as bash. A failing
 case is one where it does not.
 
 The corpus is the source of truth for "what fredshell must do." Prose
-in `PLAN_06_bash_compat.md` and elsewhere describes _strategy_; the
+in `PLAN_06_exec.md` and elsewhere describes _strategy_; the
 corpus describes _behavior_.
 
 ### 2. The corpus has three tiers, sourced explicitly
@@ -90,12 +90,14 @@ Planning documents are split into two phases:
 - **Phase A** docs are corpus-independent and drafted before the corpus
   exists. These include the testing methodology itself (PLAN_05), crate
   architecture (PLAN_02), foundational subsystems (PLAN_03, PLAN_04,
-  PLAN_07, PLAN_08), and peripheral design (PLAN_10, PLAN_11, PLAN_12).
+  PLAN_07, PLAN_11), and peripheral design (PLAN_12, PLAN_13, PLAN_14).
 - **Phase B** docs are corpus-dependent. They receive stubs during
   Phase A and are fully drafted only after the v1 corpus is curated
-  and the harness reports a baseline pass-rate. These are: bash compat
-  (PLAN_06), the tier-2 builtin inventory (PLAN_09), and the
-  implementation roadmap (PLAN_13). Drafting these before the corpus
+  and the harness reports a baseline pass-rate. These are: the bash
+  compat executor and Tier-1 builtin inventory (PLAN_06 Phase B),
+  spec-sheet drafting (PLAN_08), the fuzzer / differential program
+  (PLAN_09), traps and job control (PLAN_10), and the implementation
+  roadmap (PLAN_15). Drafting these before the corpus
   exists would mean guessing at priorities; drafting them after means
   data-driven prioritization.
 
@@ -160,7 +162,7 @@ This is the operational answer to "what does fredshell support?":
 
 ### Prose-only specification
 
-Write `PLAN_06_bash_compat.md` as a detailed prose description of which
+Write `PLAN_06_exec.md` as a detailed prose description of which
 bash features are supported and how. **Rejected.** Prose is not
 executable. It cannot answer "does this PR break feature X" or "what
 percentage of feature Y do we support today." Prose specifications of
@@ -192,11 +194,16 @@ with executor, no sandboxable environment).
   and CI integration that operationalize this ADR.
 - `PLAN_02_architecture.md` — the architectural constraints this ADR
   imposes (separable parser, sandboxable executor, batch-mode entry).
-- `PLAN_06_bash_compat.md` — the Phase B compat document whose detail
-  is informed by harness output.
-- `PLAN_09_builtins.md` — the Phase B builtin inventory whose priority
-  is informed by corpus frequency analysis.
-- `PLAN_13_milestones.md` — the Phase B roadmap whose phasing is
+- `PLAN_06_exec.md` — the Phase B compat document whose detail
+  (executor semantics and Tier-1 builtin inventory) is informed by
+  harness output and corpus frequency analysis.
+- `PLAN_08_spec_drafting.md` — the per-builtin and per-feature spec
+  sheets whose drafting order is informed by corpus frequency.
+- `PLAN_09_fuzzer.md` — the grammar-aware fuzzer and differential
+  oracle that expand the corpus beyond hand-written cases.
+- `PLAN_10_traps_and_jobs.md` — traps, signal disposition, and job
+  control whose detail is informed by harness output.
+- `PLAN_15_milestones.md` — the Phase B roadmap whose phasing is
   informed by pass-rate progression.
 - ADR 0001 — in-process execution; this ADR is the methodology by
   which tier-2 builtins are measured for parity against bash.

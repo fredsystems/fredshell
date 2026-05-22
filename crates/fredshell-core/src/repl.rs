@@ -88,16 +88,16 @@ fn write_prompt(session: &TerminalSession) {
 ///
 /// Calls [`exec::run_source`] with a fresh [`exec::ExecEnv`] (the
 /// per-line construction cost is one `current_dir` syscall and one
-/// `vars_os` walk — well inside the `PLAN_06a` §9 budget; `PLAN_06b`
+/// `vars_os` walk — well inside the `PLAN_06` §9 budget; `PLAN_06`
 /// hoists the env into `ShellState` and reuses it). When the
 /// returned [`exec::RunResult`] carries `exit_requested = true`
 /// (the user typed the `exit` builtin), the process terminates via
 /// [`std::process::exit`] with the requested status, matching the
-/// pre-`PLAN_06a` cooked-loop behaviour. A [`exec::RunError`] is
+/// pre-`PLAN_06` cooked-loop behaviour. A [`exec::RunError`] is
 /// reported to stderr and the loop continues.
 ///
 /// Empty / whitespace-only lines are handled by the dispatcher
-/// itself (see `PLAN_06a` §3), so this function does not pre-trim.
+/// itself (see `PLAN_06` §3), so this function does not pre-trim.
 ///
 /// Infallible from the caller's perspective: any error encountered
 /// is written to stderr and the loop carries on. The interactive
@@ -116,7 +116,7 @@ fn dispatch_line(line: &str) {
             if result.exit_requested {
                 std::process::exit(result.status.0);
             }
-            // PLAN_06b will store result.status in ShellState as $?;
+            // PLAN_06 will store result.status in ShellState as $?;
             // for v0 we discard it after the line. The harness uses
             // its own code path and does not need this side channel.
         }

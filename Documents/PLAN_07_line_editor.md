@@ -8,7 +8,7 @@
 > Phase: A. Status: draft.
 > Settles the line-editor question left open in PLAN_02 §5.
 > Consumes: PLAN_03 (encoders), PLAN_04 (terminal session).
-> Consumed by: PLAN_08 (prompt), PLAN_09 (completion), PLAN_10 (config).
+> Consumed by: PLAN_11 (prompt), PLAN_06 (completion), PLAN_12 (config).
 
 This document specifies the line editor and surrounding interactive
 UX: keystroke decoding, buffer model, keymap dispatch, history,
@@ -78,7 +78,7 @@ the editor, against a deliberate scaffold (§11.1).
   mode in v1 is "vim-without-the-ex-line."
 - **Image protocols inside the buffer.** Not a shell concern.
 - **Plugin / scripting hooks for the editor.** Hooks belong in
-  PLAN_10 (config); v1 ships a fixed set of `EditCommand`s
+  PLAN_12 (config); v1 ships a fixed set of `EditCommand`s
   exposed by name through configuration.
 
 ## 2. Design tenets
@@ -295,7 +295,7 @@ Specifically:
 
 It does **not** store:
 
-- The prompt itself. PLAN_08 produces it; the editor knows only
+- The prompt itself. PLAN_11 produces it; the editor knows only
   how many columns it occupies on the starting visual row.
 - Previously executed commands or their output. Those belong to
   the host terminal emulator (kitty, alacritty, foot, …), which
@@ -680,9 +680,9 @@ completion (insert the longest common prefix), and accept/cancel.
 The provider does not see the menu; the editor does not see the
 candidate-generation logic.
 
-This seam lets PLAN_09 be drafted independently (Phase B). For v1
+This seam lets PLAN_06 be drafted independently (Phase B). For v1
 of the editor, a stub provider returning filename completions
-keeps the editor functional while PLAN_09 is being designed.
+keeps the editor functional while PLAN_06 is being designed.
 
 ## 8. History
 
@@ -796,7 +796,7 @@ checks whether the cached hint still extends the buffer.
 ### 9.3. Frame model, wrap, and diff
 
 The frame is a 2D grid built fresh per redraw from the buffer
-(§5), the prompt (PLAN_08), the hint (§9.2), and the completion
+(§5), the prompt (PLAN_11), the hint (§9.2), and the completion
 menu (§7). It is never persisted between redraws as the source
 of truth — the buffer is.
 
@@ -942,7 +942,7 @@ visual-line-based motion.
 
 Each redraw:
 
-1. Build the prompt's `FrameRow`s (PLAN_08).
+1. Build the prompt's `FrameRow`s (PLAN_11).
 2. For each logical row of the buffer, call `wrap_row` against
    the current `WrapContext`. Materialize each `VisualSlice` as
    a `FrameRow`, applying highlighter spans, selection style,
@@ -1154,7 +1154,7 @@ vi mode, hints, highlighting, and fzf are not yet present.
 - Vi normal/insert/visual + operators + text objects + counts +
   registers + `.` repeat.
 - Parser-driven highlighter.
-- Continuation prompts (coordinated with PLAN_08).
+- Continuation prompts (coordinated with PLAN_11).
 
 At the end of Phase 2, the editor is competitive with bash + vi
 mode.
@@ -1163,7 +1163,7 @@ mode.
 
 - History-based hinter.
 - Completion menu (columnar + fzf overlay), wired to a stub
-  provider until PLAN_09 lands.
+  provider until PLAN_06 lands.
 - History expansion (`!!`, `!$`, etc.) with `histverify` preview.
 
 At the end of Phase 3, the editor is competitive with fish for
@@ -1405,10 +1405,10 @@ performance-sensitive part of fredshell.
   unit, snapshot, property, and benchmark cases.
 - **PLAN_06** (parser) provides incremental highlighting input
   and the "is this line complete?" oracle for multiline Enter.
-- **PLAN_08** (prompt) provides the leading frame content; the
+- **PLAN_11** (prompt) provides the leading frame content; the
   editor composes prompt + buffer + hint + menu into a single
   frame.
-- **PLAN_09** (completion) implements `CompletionProvider`; the
+- **PLAN_06** (completion) implements `CompletionProvider`; the
   editor owns the menu and trigger semantics.
-- **PLAN_10** (config) maps user keybinding configuration onto
+- **PLAN_12** (config) maps user keybinding configuration onto
   `EditCommand` variants.

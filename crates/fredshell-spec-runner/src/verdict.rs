@@ -84,7 +84,7 @@ pub enum CaseVerdict {
     /// (see [`VerdictTally::deferred_honored`]).
     DeferredHonored {
         /// The plan identifier from `deferred:<plan>` (e.g.
-        /// `"PLAN_06b"`). Used to group pending work by responsible
+        /// `"PLAN_06"`). Used to group pending work by responsible
         /// document.
         plan: String,
     },
@@ -215,7 +215,7 @@ pub struct VerdictTally {
     /// Number of `wontfix` cases honored.
     pub wontfix_honored: usize,
     /// Per-plan count of `deferred:PLAN_XX` cases honored.
-    /// Keyed by the bare plan identifier (e.g. `"PLAN_06b"`).
+    /// Keyed by the bare plan identifier (e.g. `"PLAN_06"`).
     pub deferred_honored: BTreeMap<String, usize>,
     /// Number of `RECLASSIFY` signals emitted.
     pub reclassify: usize,
@@ -409,15 +409,12 @@ mod tests {
 
     #[test]
     fn classify_deferred_match_is_reclassify_carrying_plan_in_from() {
-        let v = classify(
-            &CaseStatus::Deferred("PLAN_06b".to_owned()),
-            &pass_outcome(),
-        );
+        let v = classify(&CaseStatus::Deferred("PLAN_06".to_owned()), &pass_outcome());
         match v {
             CaseVerdict::Reclassify {
                 from, suggested, ..
             } => {
-                assert_eq!(from, CaseStatus::Deferred("PLAN_06b".to_owned()));
+                assert_eq!(from, CaseStatus::Deferred("PLAN_06".to_owned()));
                 assert_eq!(suggested, CaseStatus::Pass);
             }
             other => panic!("expected Reclassify, got {other:?}"),
@@ -427,11 +424,11 @@ mod tests {
     #[test]
     fn classify_deferred_mismatch_is_deferred_honored_with_plan() {
         let v = classify(
-            &CaseStatus::Deferred("PLAN_06b".to_owned()),
+            &CaseStatus::Deferred("PLAN_06".to_owned()),
             &mismatch_outcome(),
         );
         match v {
-            CaseVerdict::DeferredHonored { plan } => assert_eq!(plan, "PLAN_06b"),
+            CaseVerdict::DeferredHonored { plan } => assert_eq!(plan, "PLAN_06"),
             other => panic!("expected DeferredHonored, got {other:?}"),
         }
     }
@@ -441,11 +438,11 @@ mod tests {
         // The canonical "we got here" signal for deferred cases: the
         // executor refused because the feature has not landed yet.
         let v = classify(
-            &CaseStatus::Deferred("PLAN_09a".to_owned()),
+            &CaseStatus::Deferred("PLAN_10".to_owned()),
             &refused_outcome(),
         );
         match v {
-            CaseVerdict::DeferredHonored { plan } => assert_eq!(plan, "PLAN_09a"),
+            CaseVerdict::DeferredHonored { plan } => assert_eq!(plan, "PLAN_10"),
             other => panic!("expected DeferredHonored, got {other:?}"),
         }
     }
@@ -479,13 +476,13 @@ mod tests {
         t.record(&CaseVerdict::ExpectedFail);
         t.record(&CaseVerdict::WontfixHonored);
         t.record(&CaseVerdict::DeferredHonored {
-            plan: "PLAN_06b".to_owned(),
+            plan: "PLAN_06".to_owned(),
         });
         t.record(&CaseVerdict::DeferredHonored {
-            plan: "PLAN_06b".to_owned(),
+            plan: "PLAN_06".to_owned(),
         });
         t.record(&CaseVerdict::DeferredHonored {
-            plan: "PLAN_09a".to_owned(),
+            plan: "PLAN_10".to_owned(),
         });
         t.record(&CaseVerdict::Reclassify {
             from: CaseStatus::Fail,
@@ -497,8 +494,8 @@ mod tests {
         assert_eq!(t.regression, 1);
         assert_eq!(t.expected_fail, 1);
         assert_eq!(t.wontfix_honored, 1);
-        assert_eq!(t.deferred_honored.get("PLAN_06b").copied(), Some(2));
-        assert_eq!(t.deferred_honored.get("PLAN_09a").copied(), Some(1));
+        assert_eq!(t.deferred_honored.get("PLAN_06").copied(), Some(2));
+        assert_eq!(t.deferred_honored.get("PLAN_10").copied(), Some(1));
         assert_eq!(t.reclassify, 1);
         assert_eq!(t.total(), 9);
         assert!(t.has_ci_failures());
@@ -522,18 +519,18 @@ mod tests {
 
     #[test]
     fn tally_deferred_keyed_by_plan_so_xtask_can_filter() {
-        // §12.2: `cargo xtask compat --status deferred:PLAN_06b` lists
-        // every PLAN_06b case. The tally must preserve enough
+        // §12.2: `cargo xtask compat --status deferred:PLAN_06` lists
+        // every PLAN_06 case. The tally must preserve enough
         // structure for that query.
         let mut t = VerdictTally::new();
         t.record(&CaseVerdict::DeferredHonored {
-            plan: "PLAN_06b".to_owned(),
+            plan: "PLAN_06".to_owned(),
         });
         t.record(&CaseVerdict::DeferredHonored {
-            plan: "PLAN_09a".to_owned(),
+            plan: "PLAN_10".to_owned(),
         });
         let keys: Vec<&String> = t.deferred_honored.keys().collect();
-        assert_eq!(keys, vec!["PLAN_06b", "PLAN_09a"]);
+        assert_eq!(keys, vec!["PLAN_06", "PLAN_10"]);
     }
 
     #[test]

@@ -5,5 +5,5 @@ greet() {
 }
 greet world
 """
-status = "deferred:PLAN_06b"
+status = "deferred:PLAN_06"
 tags = ["functions", "posix-overlap"]

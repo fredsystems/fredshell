@@ -3,5 +3,5 @@ script = """
 trap 'echo bye' EXIT
 echo hello
 """
-status = "deferred:PLAN_09a"
+status = "deferred:PLAN_10"
 tags = ["traps", "exit-trap"]

@@ -7,7 +7,7 @@
 //!
 //! [`ExecEnv`] is the v0 envelope owned by the host (binary REPL or
 //! `PLAN_05` spec harness) and threaded through `run_source` /
-//! `run_script`. See `PLAN_06a` §2.2 for the contract and §7 for the
+//! `run_script`. See `PLAN_06` §2.2 for the contract and §7 for the
 //! v0 deviations from `PLAN_02` §4.2 (notably: env map keyed by
 //! `String`, no stdio/shell/builtins fields yet).
 //!
@@ -80,10 +80,10 @@ pub enum ExternalCommandPolicy {
 ///
 /// Constructed by the host (binary or harness) and passed by mutable
 /// reference to [`crate::run_source`] / [`crate::run_script`]. The
-/// executor mutates the working directory on `cd` and (in `PLAN_06b`)
+/// executor mutates the working directory on `cd` and (in `PLAN_06`)
 /// mutates the environment on `export`.
 ///
-/// `#[non_exhaustive]` because `PLAN_06b` adds fields: `stdin` (boxed
+/// `#[non_exhaustive]` because `PLAN_06` adds fields: `stdin` (boxed
 /// reader), `shell` (the `ShellState`), `builtins` (the
 /// `BuiltinRegistry`), `path_policy`, `signal_policy`. See `PLAN_02`
 /// §4.2.
@@ -108,7 +108,7 @@ pub struct ExecEnv {
     ///
     /// v0 uses `HashMap<String, String>` for test ergonomics. Keys
     /// or values containing non-UTF-8 bytes are dropped by
-    /// [`Self::from_process`] (see that constructor's docs). `PLAN_06b`
+    /// [`Self::from_process`] (see that constructor's docs). `PLAN_06`
     /// migrates to `HashMap<OsString, OsString>` per `PLAN_02` §4.2.
     pub env: HashMap<String, String>,
 
@@ -120,7 +120,7 @@ pub struct ExecEnv {
     /// [`super::testing`]).
     ///
     /// In v0, only the `spawn_via_sh` path actually writes here —
-    /// builtins (`cd`, `exit`) do not produce stdout. `PLAN_06b`
+    /// builtins (`cd`, `exit`) do not produce stdout. `PLAN_06`
     /// rewrites builtins to route through this field too, at which
     /// point this docstring's "every byte" claim becomes literally
     /// true.
@@ -162,7 +162,7 @@ impl ExecEnv {
     ///
     /// `cwd` is initialised from [`std::env::current_dir`] and `env`
     /// from [`std::env::vars_os`]. Non-UTF-8 variables are dropped
-    /// silently in v0; `PLAN_06b` migrates the env map to `OsString`
+    /// silently in v0; `PLAN_06` migrates the env map to `OsString`
     /// keys/values and preserves them verbatim.
     ///
     /// [`Self::external_command_policy`] defaults to

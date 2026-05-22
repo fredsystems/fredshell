@@ -110,7 +110,7 @@ impl Sandbox {
     ///
     /// The v0 `ExecEnv` env map is keyed by `String`; if the host
     /// `TMPDIR` is non-UTF-8 the harness must refuse to run the case
-    /// rather than silently lose the sandbox path. `PLAN_06b`'s
+    /// rather than silently lose the sandbox path. `PLAN_06`'s
     /// migration to `OsString` removes this restriction.
     #[must_use]
     pub fn root_is_utf8(&self) -> bool {
@@ -130,7 +130,7 @@ fn copy_dir_recursive(from: &Path, to: &Path) -> io::Result<()> {
             fs::copy(entry.path(), &dst)?;
         } else {
             // Symlinks and special files are out of scope for v0.
-            // `PLAN_06b` may need symlink fixtures (e.g. for `readlink`
+            // `PLAN_06` may need symlink fixtures (e.g. for `readlink`
             // tests); revisit when a case requires it.
         }
     }

@@ -6,9 +6,9 @@
 //! Result and error envelopes for the execution pipeline.
 //!
 //! These types form the public surface that `PLAN_05`'s spec harness
-//! and the binary REPL both consume. See `PLAN_06a` §2.4.
+//! and the binary REPL both consume. See `PLAN_06` §2.4.
 //!
-//! All envelopes are `#[non_exhaustive]` so `PLAN_06b` can add fields
+//! All envelopes are `#[non_exhaustive]` so `PLAN_06` can add fields
 //! and variants additively without breaking match exhaustiveness in
 //! callers.
 
@@ -110,7 +110,7 @@ pub enum RunError {
 /// the native executor does not yet handle. The harness uses this so
 /// it can never silently inherit bash semantics it has not vendored.
 ///
-/// `PLAN_06b` removes the policy field once native execve lands;
+/// `PLAN_06` removes the policy field once native execve lands;
 /// strict mode then becomes unconditional and this enum loses its
 /// "policy set strict" variants.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -3,7 +3,7 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT.
 
-//! Integration smoke test for `PLAN_06a` §8.
+//! Integration smoke test for `PLAN_06` §8.
 //!
 //! Exercises [`fredshell_core::run_source`] end-to-end against a
 //! temp directory: `cd subdir && pwd` must produce the expected
@@ -53,7 +53,7 @@ fn cd_subdir_then_pwd_via_run_source_oneshot() {
     // Drive via `fredshell -c` so the binary's one-shot path
     // exercises run_via_sh -> /bin/sh, which is the same exit-code
     // propagation path used by run_source for non-builtin lines.
-    // PLAN_06b will route -c through run_source directly; until
+    // PLAN_06 will route -c through run_source directly; until
     // then, the equivalent in-process check lives in
     // `exec::tests::cd_builtin_changes_process_cwd_…`.
     let bin = fredshell_bin();

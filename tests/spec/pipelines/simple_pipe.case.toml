@@ -2,5 +2,5 @@ description = "A simple `|` pipeline forwards stdout from one stage to stdin of 
 script = """
 echo hello | { read x; echo "got:$x"; }
 """
-status = "deferred:PLAN_06b"
+status = "deferred:PLAN_06"
 tags = ["pipelines", "posix-overlap"]

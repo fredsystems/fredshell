@@ -4,5 +4,5 @@ sleep 0.01 &
 wait
 echo done
 """
-status = "deferred:PLAN_09a"
+status = "deferred:PLAN_10"
 tags = ["job-control", "background", "wait"]

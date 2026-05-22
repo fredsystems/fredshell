@@ -1,11 +1,11 @@
-# PLAN_08 — Prompt Renderer
+# PLAN_11 — Prompt Renderer
 
 > Last updated: 2026-05-20 — first draft.
 > Phase: A. Status: draft.
 > Consumes: PLAN_02 (architecture, async strategy), PLAN_03 (encoders),
 > PLAN_04 (terminal session), PLAN_07 (line editor frame integration).
-> Consumed by: PLAN_07 (frame composition), PLAN_10 (config),
-> PLAN_12 (AI segments, optional).
+> Consumed by: PLAN_07 (frame composition), PLAN_12 (config),
+> PLAN_14 (AI segments, optional).
 
 This document specifies the fredshell prompt renderer: the segment
 model, the synchronous and asynchronous evaluation paths, the
@@ -119,7 +119,7 @@ crates/fredshell-prompt/src/
     time.rs           — current time with format
     shell_level.rs    — SHLVL indicator
     container.rs      — docker / podman / nix-shell marker
-    ai_hint.rs        — optional, gated by PLAN_12 feature flag
+    ai_hint.rs        — optional, gated by PLAN_14 feature flag
   render/
     mod.rs            — segment list → Vec<FrameRow>
     layout.rs         — left/right alignment, separators
@@ -250,7 +250,7 @@ pub struct SegmentBody {
 
 The trait is closed in practice: the only `impl Segment` types
 live in `crates/fredshell-prompt/src/modules/`. The `Custom`
-variant exists to allow PLAN_12's AI hint segment to live in a
+variant exists to allow PLAN_14's AI hint segment to live in a
 feature-gated module without being part of `SegmentKind`'s
 exhaustive match in the core registry; it is not user-extensible.
 
@@ -317,8 +317,8 @@ The binary creates a `tokio::runtime::Builder::new_current_thread`
 runtime at startup. The runtime handle is passed to:
 
 - `PromptRenderer` (this crate).
-- `CompletionEngine` if PLAN_07/PLAN_09 elects async completion.
-- `AiClient` if PLAN_12 is enabled.
+- `CompletionEngine` if PLAN_07/PLAN_06 elects async completion.
+- `AiClient` if PLAN_14 is enabled.
 
 `fredshell-core` does not see the runtime. The synchronous
 executor blocks on real syscalls; it never enters the runtime.
@@ -480,7 +480,7 @@ risk because it does not eval anything.
 
 ### 7.4. Layered configuration
 
-PLAN_10 owns the configuration loader. Prompt config is one
+PLAN_12 owns the configuration loader. Prompt config is one
 layer of the broader fredshell config, loaded from:
 
 1. `$XDG_CONFIG_HOME/fredshell/prompt.toml` (fredshell-native).
@@ -655,7 +655,7 @@ Transient prompt. Continuation prompt. Container detection.
 Venv detection. Time / shell level. Starship-config
 compatibility shim. Documentation of the full schema.
 
-### 11.5. Phase 4 — AI hint segment (deferred to PLAN_12)
+### 11.5. Phase 4 — AI hint segment (deferred to PLAN_14)
 
 Optional. Lives behind a feature flag. Same async-segment
 plumbing as `GitStatus`.
@@ -677,7 +677,7 @@ Rejected for three reasons:
    thing in safe Rust. Tokio futures are dropped, and the
    underlying I/O is cancelled by the runtime where possible.
 3. **Ecosystem alignment.** `gix` exposes async operations.
-   HTTP clients (PLAN_12) are async-first. Standardizing on
+   HTTP clients (PLAN_14) are async-first. Standardizing on
    tokio for I/O-bound work in the binary keeps the surface
    uniform.
 
@@ -808,7 +808,7 @@ justification) applies to every prompt benchmark.
   starship's format string (recursion, escape sequences) are
   matched best-effort; users with deep starship configs may
   see divergence. We document this rather than chasing parity.
-- **AI hint placement.** The AI hint segment (PLAN_12) wants
+- **AI hint placement.** The AI hint segment (PLAN_14) wants
   to render under the prompt as a separate row, not within the
   prompt row. The frame model accommodates this (the prompt
   emits multiple `FrameRow`s); the config schema needs a
@@ -819,7 +819,7 @@ justification) applies to every prompt benchmark.
 
 - **PLAN_02** commits the architecture: tokio runtime in the
   binary, sync core, prompt is the canonical async-at-the-edge
-  example. PLAN_08 implements that commitment.
+  example. PLAN_11 implements that commitment.
 - **PLAN_03** provides `Sgr` and the encoders the renderer's
   output eventually flows through (via PLAN_07's diff layer).
 - **PLAN_04** owns the terminal width fed into `PromptContext`,
@@ -829,9 +829,9 @@ justification) applies to every prompt benchmark.
   redraw mechanics, the wrap context that consumes
   `first_line_indent`, and the main-loop integration that calls
   `poll_async` between keystrokes.
-- **PLAN_09** (completion) shares the tokio runtime if it
+- **PLAN_06** (completion) shares the tokio runtime if it
   elects async. Independent decision.
-- **PLAN_10** (config) owns the loader; PLAN_08 contributes the
+- **PLAN_12** (config) owns the loader; PLAN_11 contributes the
   prompt-specific schema.
-- **PLAN_12** (AI) contributes an optional segment. Same async
+- **PLAN_14** (AI) contributes an optional segment. Same async
   plumbing.
