@@ -52,3 +52,43 @@ PLAN_10.5 or a future PLAN_16) because it cuts across grammar
 and runtime.
 **Why it matters:** affects whether the eventual implementer has
 a single home or two.
+
+## From PLAN_08
+
+### Q-08-A — Single template or two
+
+**Doc:** PLAN_08 §11 Q08.1.
+**Default:** single template for builtins and features; features
+leave the `Tier` line blank.
+**Alternative:** two distinct templates.
+**Why it matters:** small DX choice; affects how `xtask
+check-specs` validates the section list.
+
+### Q-08-B — Are `defer:N` workarounds contractually binding?
+
+**Doc:** PLAN_08 §11 Q08.2.
+**Default:** best-effort guidance, not contract.
+**Alternative:** treat workarounds as binding promises and test
+them in the corpus.
+**Why it matters:** if binding, every defer row gains an
+executable test obligation, materially expanding the v1 corpus.
+
+### Q-08-C — `set -o` granularity
+
+**Doc:** PLAN_08 §11 Q08.3.
+**Default:** one row per `-o` longopt; accept ~80-row `set` sheet.
+**Alternative:** group `-o` options by category in the sheet,
+classify at the category level.
+**Why it matters:** affects sheet readability vs.
+classification precision.
+
+### Q-08-D — Sheet ID embedded in `refuse!`
+
+**Doc:** PLAN_08 §8.2.
+**Default:** `refuse!` macro reads the sheet at compile time via
+`include_str!` and validates row classification matches.
+**Alternative:** `refuse!` just takes a string; no compile-time
+checking; rely on `xtask check-specs` instead.
+**Why it matters:** compile-time check is stronger but couples
+compilation to sheet contents (every sheet edit triggers
+rebuilds of every builtin that refuses something).
