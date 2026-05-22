@@ -5,7 +5,7 @@
 > §14 implementation log and §15 cleanup items.
 > Phase: A. Status: implemented.
 > Consumes: PLAN_02 §5, §6.1. Consumed by: PLAN_07 (line editor),
-> PLAN_08 (prompt), PLAN_03 (capability boundary).
+> PLAN_11 (prompt), PLAN_03 (capability boundary).
 
 This document specifies the layer that sits between the kernel's
 terminal interface and the rest of fredshell. It owns: raw mode
@@ -70,7 +70,7 @@ PLAN_04 does not anticipate this and does not pull in
   raw bytes only for terminal probes (see §6).
 - **Key decoding.** Translating decoded CSI/SS3 sequences into
   semantic `KeyEvent`s belongs to PLAN_07.
-- **Prompt rendering.** PLAN_08.
+- **Prompt rendering.** PLAN_11.
 - **Pipeline fd setup.** That belongs to `fredshell-core::exec`;
   PLAN_04 only provides the signal/wait primitives it needs.
 - **Mouse input.** Deferred. If/when the line editor enables it,
@@ -586,7 +586,7 @@ rather than rediscovering them.
   `give_foreground` / `take_foreground` and the `CancellationToken`.
 - **PLAN_07** (line editor) consumes `wait()` and the raw-mode
   transition, and decodes the bytes PLAN_04's `input()` returns.
-- **PLAN_08** (prompt) consumes `Capabilities` to decide which
+- **PLAN_11** (prompt) consumes `Capabilities` to decide which
   PLAN_03 sequences are safe.
 
 ## 14. Implementation log

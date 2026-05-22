@@ -2,5 +2,5 @@ description = "`[[ \"a\" == \"a\" ]]` succeeds and the `&&` branch runs"
 script = """
 [[ "abc" == "abc" ]] && echo match
 """
-status = "deferred:PLAN_06b"
+status = "deferred:PLAN_06"
 tags = ["tests-and-conditionals", "double-bracket"]

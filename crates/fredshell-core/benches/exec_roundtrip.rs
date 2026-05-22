@@ -3,10 +3,10 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT.
 
-//! Microbenchmarks for the [`PLAN_06a`] execution pipeline.
+//! Microbenchmarks for the [`PLAN_06`] execution pipeline.
 //!
 //! Seeds the `PLAN_02` §9 budget tracker with a baseline for the
-//! 06a stub dispatcher so `PLAN_06b` (native parser + executor) has
+//! 06a stub dispatcher so `PLAN_06` (native parser + executor) has
 //! a "before" data point to measure against.
 //!
 //! Two scenarios are exercised:

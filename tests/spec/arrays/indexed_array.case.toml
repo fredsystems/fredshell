@@ -3,5 +3,5 @@ script = """
 arr=(a b c)
 echo "${arr[1]}"
 """
-status = "deferred:PLAN_06b"
+status = "deferred:PLAN_06"
 tags = ["arrays", "indexed"]

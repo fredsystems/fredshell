@@ -84,7 +84,7 @@ debt" and addressed as real-world scripts surface them.
 
 The compat strategy itself — native parser vs adopting `brush-parser`, the
 phasing from `/bin/sh -c` fallback to in-process execution — is owned by
-`PLAN_05_bash_compat.md`. This document only commits to the goal.
+`PLAN_06_exec.md`. This document only commits to the goal.
 
 ### G2. Modern interactive UX, baked in, zero configuration
 
@@ -136,7 +136,7 @@ fredshell is delivered as a flake. It exposes:
 The Nix integration is **first-class**, not an afterthought. It is one of
 the two main delivery channels (the other being conventional `cargo
 install` and distribution packages). It owns its own planning document
-(`PLAN_10_nix_integration.md`).
+(`PLAN_13_nix_integration.md`).
 
 ### G5. Predictable performance
 
@@ -158,8 +158,8 @@ Performance is a feature. Specifically:
   fredshell's per-command overhead is ≤ 20% of the underlying
   `fork/exec` time.
 
-These budgets drive design choices throughout (`PLAN_07_prompt.md`,
-`PLAN_06_interactive_ux.md`, `PLAN_02_architecture.md`). Regressions are
+These budgets drive design choices throughout (`PLAN_11_prompt.md`,
+`PLAN_07_line_editor.md`, `PLAN_02_architecture.md`). Regressions are
 caught by benchmarks per `AGENTS.md`'s mandatory benchmarking rule.
 
 ### G6. Correctness over cleverness
@@ -176,7 +176,7 @@ This goal manifests as:
 - RAII-guarded raw-mode and terminal-state restoration that survives
   panics (per `PLAN_04_terminal_io.md`).
 - Conservative defaults; loud failures over silent fallbacks.
-- A test culture (per `PLAN_12_testing.md`) that treats subtle behaviors
+- A test culture (per `PLAN_05_testing.md`) that treats subtle behaviors
   as testable invariants.
 
 ## Non-goals
@@ -339,9 +339,9 @@ Some goals will conflict in practice. The resolution rules:
 This document does not specify:
 
 - The crate layout or module boundaries (`PLAN_02_architecture.md`).
-- The bash compatibility strategy or phasing (`PLAN_05_bash_compat.md`).
+- The bash compatibility strategy or phasing (`PLAN_06_exec.md`).
 - Any concrete API design (the relevant `PLAN_NN_*.md`).
-- The roadmap or milestone ordering (`PLAN_13_milestones.md`).
+- The roadmap or milestone ordering (`PLAN_15_milestones.md`).
 
 If you find yourself wanting to add an interface sketch or a phase plan
 to this document, you are in the wrong document.

@@ -2,5 +2,5 @@ description = "Brace expansion `{1..5}` expands to a space-separated numeric seq
 script = """
 echo {1..5}
 """
-status = "deferred:PLAN_06b"
+status = "deferred:PLAN_06"
 tags = ["expansions", "brace-expansion"]

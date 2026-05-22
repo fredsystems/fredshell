@@ -4,5 +4,5 @@ echo hello > out.txt
 read line < out.txt
 echo "$line"
 """
-status = "deferred:PLAN_06b"
+status = "deferred:PLAN_06"
 tags = ["redirection", "posix-overlap"]

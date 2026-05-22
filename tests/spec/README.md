@@ -10,7 +10,7 @@ things:
 
 Tier 2 (oils-spec, fetched at CI time) and tier 3 (real-world
 scripts) live elsewhere and are added by later subtasks (`PLAN_05`
-05.9 onward, and `PLAN_13`).
+05.9 onward, and `PLAN_15`).
 
 ## Layout
 
@@ -42,7 +42,7 @@ cargo xtask compat --tier 1
 
 # Restrict to cases with a given declared status (PLAN_05 §12).
 cargo xtask compat --status pass
-cargo xtask compat --status deferred:PLAN_06b
+cargo xtask compat --status deferred:PLAN_06
 
 # Emit a machine-readable JSON report.
 cargo xtask compat --json target/compat-report.json
@@ -68,7 +68,7 @@ migration note in this file.
     "regression": 0,
     "expected_fail": 0,
     "wontfix_honored": 0,
-    "deferred_honored": { "PLAN_06b": 2 },
+    "deferred_honored": { "PLAN_06": 2 },
     "reclassify": 0,
     "total": 3,
     "pass_rate_numerator": 1,
@@ -165,7 +165,7 @@ The `kind` discriminator selects the payload:
 { "kind": "regression" }
 { "kind": "expected_fail" }
 { "kind": "wontfix_honored" }
-{ "kind": "deferred_honored", "plan": "PLAN_06b" }
+{ "kind": "deferred_honored", "plan": "PLAN_06" }
 {
   "kind": "reclassify",
   "from": "fail",

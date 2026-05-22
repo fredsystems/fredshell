@@ -2,5 +2,5 @@ description = "`$((expr))` evaluates a basic arithmetic expression with operator
 script = """
 echo $((2 + 3 * 4))
 """
-status = "deferred:PLAN_06b"
+status = "deferred:PLAN_06"
 tags = ["arithmetic", "posix-overlap"]

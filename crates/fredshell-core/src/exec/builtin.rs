@@ -6,19 +6,19 @@
 //! Tier-2 builtin trait, invocation context, and error envelope.
 //!
 //! v0 ships **definitions only**. No tier-2 builtin is registered
-//! today; the registry that consumes this trait lands with `PLAN_09`.
+//! today; the registry that consumes this trait lands with `PLAN_06`.
 //! The shapes are nailed down now so:
 //!
-//! - `PLAN_06b` can wire the dispatcher against a stable trait object.
-//! - `PLAN_09` can implement individual builtins without re-litigating
+//! - `PLAN_06` can wire the dispatcher against a stable trait object.
+//! - `PLAN_06` can implement individual builtins without re-litigating
 //!   the calling convention.
 //!
-//! See `PLAN_06a` §2.6 for the contract.
+//! See `PLAN_06` §2.6 for the contract.
 //!
 //! ## v0 type choices
 //!
 //! `args` uses `&[String]` and `env` uses `&HashMap<String, String>`
-//! to match [`crate::exec::ExecEnv`]'s v0 representation. `PLAN_06b`
+//! to match [`crate::exec::ExecEnv`]'s v0 representation. `PLAN_06`
 //! migrates both to `OsString` together with `ExecEnv::env` (see
 //! `PLAN_02` §4.2). The migration is a coordinated change; callers
 //! today are tests only.
@@ -42,7 +42,7 @@ use super::error::ExitStatus;
 /// All fields are short-lived borrows from the dispatcher's stack
 /// frame: a builtin must not stash them past the `invoke` call.
 ///
-/// `#[non_exhaustive]` because `PLAN_06b` adds further fields
+/// `#[non_exhaustive]` because `PLAN_06` adds further fields
 /// (typed redirection state, signal masks, `ShellState` access).
 #[non_exhaustive]
 pub struct Tier2Ctx<'a> {
@@ -57,7 +57,7 @@ pub struct Tier2Ctx<'a> {
     pub cwd: &'a Path,
 
     /// Environment visible to the builtin. v0 type per the module
-    /// docs; `PLAN_06b` migrates to `OsString`.
+    /// docs; `PLAN_06` migrates to `OsString`.
     pub env: &'a HashMap<String, String>,
 
     /// Standard input. Wrapped as a trait object so the dispatcher
