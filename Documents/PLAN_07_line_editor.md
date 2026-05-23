@@ -1,6 +1,12 @@
 # PLAN_07 — Interactive UX and Line Editor
 
-> Last updated: 2026-05-20 — first draft; §5 rewritten around
+> Last updated: 2026-05-22 — scope augmentation: PLAN_07 now
+> explicitly owns the `history` and `fc` builtins (new §8.6),
+> the `yield_terminal` primitive consumed by PLAN_10 trap
+> delivery (new §9.5, answers PLAN_10 Q10.5), and the L4 PTY
+> harness for end-to-end editor tests (new §12.7). Prompt
+> rendering remains delegated to PLAN_11.
+> Earlier on 2026-05-20 — first draft; §5 rewritten around
 > `Vec<LogicalRow>` of TChar with render-only soft wrap; §9.3
 > expanded with wrap module, RowLayout, VisualCursor; §10 adds
 > rejected-alternatives subsections; §12 expanded with mandatory
@@ -8,7 +14,9 @@
 > Phase: A. Status: draft.
 > Settles the line-editor question left open in PLAN_02 §5.
 > Consumes: PLAN_03 (encoders), PLAN_04 (terminal session).
-> Consumed by: PLAN_11 (prompt), PLAN_06 (completion), PLAN_12 (config).
+> Consumed by: PLAN_11 (prompt), PLAN_06 (completion + builtin
+> dispatch for `history`/`fc`), PLAN_10 (trap delivery via
+> `yield_terminal`), PLAN_12 (config).
 
 This document specifies the line editor and surrounding interactive
 UX: keystroke decoding, buffer model, keymap dispatch, history,
@@ -67,6 +75,16 @@ the editor, against a deliberate scaffold (§11.1).
   documented in §7.
 - **Redraw loop.** Diff-based; emits only the bytes needed via
   PLAN_03 encoders; respects `Capabilities::synchronized_output`.
+- **`history` and `fc` builtins.** PLAN_07 owns the in-process
+  implementations of the `history` and `fc` builtins. They are
+  thin wrappers over the same history store the interactive
+  editor uses; PLAN_06 dispatches to them by name. See §8.6.
+- **Terminal yield primitive.** A `yield_for_one_line` operation
+  that hands the controlling terminal to a foreground child for
+  the duration of one read-line/read-line-equivalent and reclaims
+  it afterwards, without tearing down the editor state. Consumed
+  by PLAN_10 trap delivery (Q10.5) and by external-editor
+  integration. See §9.5.
 
 ### Out of scope (v1)
 
@@ -145,12 +163,24 @@ crates/fredshell-core/src/edit/
     mod.rs            — CompletionMenu (rendering + selection)
     fzf.rs            — fzf-style overlay menu
   render/
-    mod.rs            — frame model
-    diff.rs           — frame-to-frame diff
-    paint.rs          — diff → PLAN_03 byte stream
+    mod.rs              — frame model
+    diff.rs             — frame-to-frame diff
+    paint.rs            — diff → PLAN_03 byte stream
+  yield_terminal.rs     — terminal-yield primitive (§9.5)
   scaffold/
-    mod.rs            — cooked-mode bridge (see §11.1)
+    mod.rs              — cooked-mode bridge (see §11.1)
 ```
+
+The `history` and `fc` builtin entry points live in
+`crates/fredshell-core/src/builtins/history.rs` and
+`builtins/fc.rs` (PLAN_06's module tree); they hold a
+`&mut dyn HistoryStore` whose concrete implementation lives in
+`edit::history`. See §8.6.
+
+The PTY harness (§12.7) lives in
+`crates/fredshell-core/tests/pty/` plus a `pty_harness` module
+under `fredshell-core::testing` that is compiled only with the
+`test-support` feature or under `cfg(test)`.
 
 `fredshell-core::edit` is the public surface; everything below is
 private. The crate boundary stays inside `fredshell-core` for v1
@@ -747,6 +777,74 @@ This matches bash's `histverify` set option.
   ranking; uses `fuzzy-matcher` crate or an in-house equivalent
   (decided at implementation time).
 
+### 8.6. The `history` and `fc` builtins
+
+PLAN_07 owns the history store. The two bash builtins that read
+or mutate it — `history` and `fc` — therefore live in
+`fredshell-core::builtins::history` and `::fc` but are
+implemented by calling into the PLAN_07 history API rather than
+duplicating storage. PLAN_06 (builtin dispatch) is responsible
+only for routing the builtin name to the entry point; the
+semantics are owned here.
+
+**`history` builtin.** Bash-compatible subset for v1:
+
+- `history` — print the in-memory ring with line numbers; honour
+  `HISTTIMEFORMAT`.
+- `history N` — print only the last N entries.
+- `history -c` — clear the in-memory ring (does not touch
+  `HISTFILE`).
+- `history -d offset[-end]` — delete entry or range.
+- `history -a` — append entries added in this session to
+  `HISTFILE` (the §8.3 sync path).
+- `history -r` — read `HISTFILE` and append to the in-memory
+  ring.
+- `history -w` — overwrite `HISTFILE` with the in-memory ring.
+- `history -n` — read entries from `HISTFILE` that have not been
+  read yet.
+- `history -p arg ...` — perform history expansion on each `arg`
+  without storing the result; print expansions to stdout.
+- `history -s arg ...` — push `arg` onto the in-memory ring
+  without executing it.
+
+Deferred to v1.1: `-S`/`-L` (synonyms for `-w`/`-r` in some
+distributions), bash's undocumented buffer-flushing modes.
+
+**`fc` builtin.** POSIX `fc` semantics:
+
+- `fc [-r] [-e editor] [first [last]]` — open the range
+  `[first, last]` in `$EDITOR` (or `-e editor`); on save, the
+  edited content is executed as if typed at the prompt. `-r`
+  reverses the order.
+- `fc -l [-nr] [first [last]]` — list the range (no editor); `-n`
+  suppresses line numbers, `-r` reverses.
+- `fc -s [pat=rep] [cmd]` — re-execute `cmd` (or the most recent
+  command) optionally with a single `pat=rep` substitution. This
+  is the "quick re-run" mode.
+
+Both builtins refuse cleanly (PLAN_05 refusal contract, PLAN_08
+spec sheet) when invoked from a non-interactive context with no
+`HISTFILE`. They are not Tier-2 — they are first-class builtins.
+
+The implementation seam is a single trait in `fredshell-core`:
+
+```rust
+pub trait HistoryStore {
+    fn entries(&self) -> &[HistoryEntry];
+    fn append(&mut self, entry: HistoryEntry);
+    fn clear(&mut self);
+    fn delete(&mut self, range: RangeInclusive<usize>);
+    fn sync(&mut self, mode: SyncMode) -> Result<(), HistoryError>;
+    fn read(&mut self) -> Result<(), HistoryError>;
+    fn write(&mut self) -> Result<(), HistoryError>;
+}
+```
+
+PLAN_07 provides the concrete implementation; the builtin code
+holds a `&mut dyn HistoryStore`. In the cooked-mode scaffold
+(§11.1) the store is a stub that records entries to an in-memory
+`Vec` and never touches disk.
+
 ## 9. Highlight, hints, and the redraw loop
 
 ### 9.1. Highlighter
@@ -981,6 +1079,77 @@ the derived caches.
 
 Prompt-width changes (right-prompt updating, git-branch refresh)
 take the same path scoped to row 0's layout.
+
+### 9.5. Terminal yield primitive
+
+PLAN_10 (traps and jobs) needs a way to hand the controlling
+terminal to a foreground external process — for example, when
+the user runs `vim` from the prompt, or when a `trap '...' DEBUG`
+handler shells out — without the editor's raw-mode state, kitty
+keyboard protocol negotiation, or partial frame state being
+visible to that child.
+
+The primitive is a single method on the editor:
+
+```rust
+impl Editor {
+    /// Yield the controlling terminal to a child process for the
+    /// duration of `f`. The editor:
+    ///
+    /// 1. Flushes any pending output.
+    /// 2. Saves cursor position and disables raw mode.
+    /// 3. Disables kitty keyboard protocol (level 0).
+    /// 4. Disables bracketed paste.
+    /// 5. Calls `f`; the child sees a vanilla cooked TTY.
+    /// 6. On return, re-enables (4), (3), (2), in that order.
+    /// 7. Invalidates the frame cache; the next redraw is full.
+    ///
+    /// `f` must not retain references to the editor; the editor
+    /// is logically suspended for its duration.
+    pub fn yield_terminal<R>(
+        &mut self,
+        f: impl FnOnce() -> R,
+    ) -> Result<R, EditorError>;
+}
+```
+
+The name `yield_terminal` is deliberately not
+`yield_for_one_line`; the primitive is more general than the
+PLAN_10 use case. PLAN_10 calls it with a closure that spawns a
+single child and waits; external-editor integration (§1) calls
+it with a closure that invokes `$EDITOR`; future job-control
+work will call it with a closure that does `tcsetpgrp` /
+`waitpid` directly.
+
+Three invariants the primitive guarantees and the tests in §12
+must lock down:
+
+1. **State restoration is total.** After `yield_terminal`
+   returns, the editor is in exactly the same observable state
+   it was in before, except for buffer contents that `f`
+   intentionally modified (e.g., `$EDITOR` re-import).
+2. **No keystrokes are lost.** Any bytes that arrived on stdin
+   between (2) and (3) of the suspend path, or between the
+   inverse steps of the resume path, are queued and re-decoded
+   on resume. The PLAN_04 input ring owns the queue.
+3. **`SIGWINCH` during yield is honoured.** PLAN_04 still
+   delivers `WindowSize` updates while `f` runs. On resume the
+   editor reads the current window size and recomputes layout
+   before redrawing.
+
+Failure modes:
+
+- If `f` panics, the editor's `Drop` impl runs the resume path
+  unconditionally; the panic propagates afterwards. The editor
+  must not leave the terminal in raw mode if the shell process
+  is about to die.
+- If the resume path itself fails (e.g., terminal disappeared),
+  `yield_terminal` returns `EditorError::TerminalLost` and the
+  caller is expected to exit the shell.
+
+This primitive is referenced by PLAN_10 §11 subtask 10.6
+(trap handler execution) and answers PLAN_10 open question
+Q10.5.
 
 ## 10. Why not reedline
 
@@ -1365,6 +1534,81 @@ The performance regression threshold from AGENTS.md (>15%
 triggers justification) applies; the editor is the most
 performance-sensitive part of fredshell.
 
+### 12.7. PTY harness (L4)
+
+Most editor tests run against the in-memory `Frame`/`Buffer`
+model — fast, hermetic, no kernel involvement. A subset of
+behaviours can only be tested through a real PTY: the
+`yield_terminal` primitive (§9.5), bracketed-paste interaction
+with raw-mode toggling, kitty keyboard-protocol level
+negotiation against a terminal that actually replies, and the
+resume-after-yield invariants. These tests are PLAN_05's **L4**
+tier (PTY-driven end-to-end), and PLAN_07 owns the harness.
+
+The harness lives in `crates/fredshell-core/tests/pty/` and is
+gated behind `#[cfg(target_family = "unix")]`. It is built on:
+
+- `nix::pty::openpty` for the master/slave pair.
+- A thin async-free wrapper in
+  `fredshell-core::testing::pty_harness` (only compiled under
+  `cfg(test)` or with the `test-support` feature).
+- A reader thread that drains the master fd into a
+  `Vec<u8>` byte log, normalised by the same filter PLAN_09 uses
+  for the differential oracle (timestamps stripped, mode bits
+  pinned to 022).
+
+The public test surface is:
+
+```rust
+pub struct PtyHarness {
+    pub master: OwnedFd,
+    pub slave_path: PathBuf,
+    pub child: Child,
+    pub output: ByteLog,
+}
+
+impl PtyHarness {
+    pub fn spawn(args: &[&str]) -> Result<Self, HarnessError>;
+    pub fn send_keys(&mut self, bytes: &[u8]) -> Result<(), HarnessError>;
+    pub fn expect_prompt(
+        &mut self,
+        timeout: Duration,
+    ) -> Result<(), HarnessError>;
+    pub fn snapshot_frame(&mut self) -> Result<FrameSnapshot, HarnessError>;
+    pub fn resize(&mut self, cols: u16, rows: u16) -> Result<(), HarnessError>;
+    pub fn shutdown(self) -> Result<ExitStatus, HarnessError>;
+}
+```
+
+Mandatory scenarios at v1:
+
+1. **Yield round-trip.** Spawn fredshell, type a command that
+   invokes `yield_terminal` with a no-op closure, assert the
+   prompt redraws identically afterwards.
+2. **Yield with child output.** Closure runs `cat <<<hello`;
+   assert "hello" appears in the byte log before the prompt
+   redraw bytes.
+3. **Yield + SIGWINCH.** Resize during the closure; assert the
+   resumed prompt is laid out at the new width.
+4. **Bracketed-paste end-to-end.** Send `ESC [ 200 ~ <data>
+ESC [ 201 ~`; assert the buffer contains exactly `<data>`
+   and no submission occurred even if `<data>` contains `\r`.
+5. **Kitty L1–L4 negotiation.** Run against a faked terminal
+   reply chain; assert the editor enables exactly the level
+   reported as supported.
+6. **Trap delivery during read-line.** PLAN_10 §11 subtask
+   10.12 owns this case, but it executes against this harness.
+
+Performance contract: the harness must spawn and reach the
+first prompt in <100 ms on the CI runners; otherwise it
+displaces real test cycles. Tests that exceed 500 ms are split
+or moved to nightly.
+
+The harness is **not** an integration test for the parser or
+the executor — those run against the spec runner (PLAN_05,
+PLAN_08). The harness exercises only the editor and PLAN_04
+terminal session.
+
 ## 13. Open questions
 
 - **Fuzzy matcher choice.** `fuzzy-matcher` (skim's algorithm) vs
@@ -1405,9 +1649,20 @@ performance-sensitive part of fredshell.
   unit, snapshot, property, and benchmark cases.
 - **PLAN_06** (parser) provides incremental highlighting input
   and the "is this line complete?" oracle for multiline Enter.
+  PLAN_06 also dispatches the `history` and `fc` builtins to
+  their entry points; the semantics of those builtins live in
+  PLAN_07 §8.6.
+- **PLAN_10** (traps and jobs) calls `yield_terminal` (§9.5)
+  when a foreground child claims the controlling terminal and
+  when trap handlers shell out. PLAN_10 §11 subtask 10.6
+  consumes this primitive; PLAN_07 §12.7 owns the PTY harness
+  that exercises trap delivery during read-line (PLAN_10
+  subtask 10.12).
 - **PLAN_11** (prompt) provides the leading frame content; the
   editor composes prompt + buffer + hint + menu into a single
-  frame.
+  frame. Prompt rendering is **not** in PLAN_07; the editor
+  knows only the prompt's column-zero offset on row 0 (and the
+  continuation-prompt width on subsequent rows).
 - **PLAN_06** (completion) implements `CompletionProvider`; the
   editor owns the menu and trigger semantics.
 - **PLAN_12** (config) maps user keybinding configuration onto
