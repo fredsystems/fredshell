@@ -1,15 +1,19 @@
 # fredshell — Master Plan
 
-> Last updated: 2026-05-22 — PLAN_07 scope augmented: owns
-> `history`/`fc` builtins, `yield_terminal` primitive (answers
-> PLAN_10 Q10.5), and L4 PTY harness. PLAN_09 drafted
-> (grammar-aware fuzzer + differential oracle, B-phase, gates
-> PLAN_06 Phase B via 06.0).
-> Earlier on 2026-05-21: restructured PLAN numbering: PLAN_06a/06b
-> collapsed into PLAN_06 (exec); old PLAN_07 narrowed to line editor;
-> PLAN_08/09/10 introduced for spec drafting, fuzzer/differential, and
-> traps+jobs; prompt/config/nix/ai/milestones shifted to 11/12/13/14/15.
-> ADR 0004 (strict-default execution) added.
+> Last updated: 2026-05-22 — PLAN_06 Phase B drafted (§13: lexer
+>
+> - parser, executor pipeline, `ShellState`, builtin inventory by
+>   owner, ADR 0004 two-stage sunset, 33-row subtask grid, five
+>   open questions Q06B.1–5). PLAN_07 scope augmented: owns
+>   `history`/`fc` builtins, `yield_terminal` primitive (answers
+>   PLAN_10 Q10.5), and L4 PTY harness. PLAN_09 drafted
+>   (grammar-aware fuzzer + differential oracle, B-phase, gates
+>   PLAN_06 Phase B via 06b.0).
+>   Earlier on 2026-05-21: restructured PLAN numbering: PLAN_06a/06b
+>   collapsed into PLAN_06 (exec); old PLAN_07 narrowed to line editor;
+>   PLAN_08/09/10 introduced for spec drafting, fuzzer/differential, and
+>   traps+jobs; prompt/config/nix/ai/milestones shifted to 11/12/13/14/15.
+>   ADR 0004 (strict-default execution) added.
 
 This is the top-level index of fredshell's planning documents. Read this first.
 The actual design lives in the per-area `PLAN_XX_*.md` documents and the ADRs in
@@ -79,7 +83,7 @@ Foundational decisions shape everything else and are recorded as ADRs:
 | 03  | `Documents/PLAN_03_ansi.md`            | A     | implemented   | `fredshell-ansi` crate: encoder API, minimal decoder, `Write`-based contract, allocation budget.                                                                                                                      |
 | 04  | `Documents/PLAN_04_terminal_io.md`     | A     | implemented   | Raw mode discipline, signals, process groups, terminal feature detection, kitty keyboard negotiation.                                                                                                                 |
 | 05  | `Documents/PLAN_05_testing.md`         | A     | implemented   | Spec-test harness, corpus methodology, oils-spec integration, real-world script corpus, CI metrics.                                                                                                                   |
-| 06  | `Documents/PLAN_06_exec.md`            | A/B   | mixed         | Execution pipeline. Skeleton (parse, `run_source`, `ExecEnv`, `RunResult`, `ExecError`, `Tier2Builtin`) implemented; semantics breadth (native parser, pipelines, redirection, expansion, builtins) corpus-dependent. |
+| 06  | `Documents/PLAN_06_exec.md`            | A/B   | mixed         | Execution pipeline. Phase A skeleton implemented; Phase B drafted (§13: lexer/parser, executor pipeline, `ShellState`, builtin inventory, ADR 0004 sunset, 33-row subtask grid). Phase B gated on 06b.0 (PLAN_09 F1). |
 | 07  | `Documents/PLAN_07_line_editor.md`     | A     | drafted       | Line editor: key-byte decoder, history, completion, fuzzy search, keybindings, syntax highlighting. Owns `history`/`fc` builtins, the `yield_terminal` primitive consumed by PLAN_10, and the L4 PTY harness.         |
 | 08  | `Documents/PLAN_08_spec_drafting.md`   | A     | drafted       | Spec sheet template (one per builtin + feature), batch-of-10 review cadence, lint extensions tying `support` rows to corpus cases.                                                                                    |     |
 | 09  | `Documents/PLAN_09_fuzzer.md`          | B     | drafted       | Grammar-aware deterministic fuzzer + differential oracle against pinned bash 5.3p9. Five tiers (F1 PR → F5 release gate). Gates PLAN_06 Phase B via 06.0 = "F1 green on main."                                        |

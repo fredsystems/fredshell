@@ -149,3 +149,56 @@ catch `$'...'` and pattern-matching quirks early.
 **Why it matters:** locale-dependent behaviour is a known bash
 quirk surface; postponing it leaves a class of bugs uncovered
 until a later milestone.
+
+## PLAN_06 — Phase B execution semantics
+
+### Q-06B-1 — Parser implementation strategy
+
+**Doc:** PLAN_06 §13.2 + §13.8 Q06B.1.
+**Default:** write our own recursive-descent parser; lands as
+ADR 0005 (subtask 06b.1) before lexer/parser implementation.
+**Alternative:** adopt `brush-parser` upstream, or fork it.
+**Why it matters:** diagnostic quality and incremental parsing
+(PLAN_07 highlighter needs partial-line tolerance) argue for
+in-house; ecosystem reuse + maintenance burden argue for adopting
+`brush-parser`. Decision blocks 06b.2 and downstream.
+
+### Q-06B-2 — `coproc` support
+
+**Doc:** PLAN_06 §13.8 Q06B.2.
+**Default:** recognise and refuse cleanly in v1; defer real
+implementation to v1.1.
+**Alternative:** implement in Phase B if the real-world corpus
+reveals frequent use (current evidence: none).
+**Why it matters:** `coproc` is a parser-level construct with
+non-trivial semantics; deferring keeps Phase B tractable.
+
+### Q-06B-3 — Here-doc temp-file threshold
+
+**Doc:** PLAN_06 §13.8 Q06B.3.
+**Default:** 64 KiB here-doc body → tempfile; smaller → pipe.
+**Alternative:** always pipe (simpler, atomic) or always
+tempfile (matches bash on macOS).
+**Why it matters:** affects observable behaviour under
+`$BASH_SUBSHELL` introspection and under FD-table inspection;
+spec sheets must agree with whichever choice ships.
+
+### Q-06B-4 — `$RANDOM` and `$SECONDS` determinism
+
+**Doc:** PLAN_06 §13.8 Q06B.4.
+**Default:** spec harness pins both to deterministic values per
+case; the PLAN_08 sheet records the pin.
+**Alternative:** leave them stochastic and normalise output in
+the harness.
+**Why it matters:** pinning is one config-line per case;
+normalisation is per-output-pattern. Pinning scales better.
+
+### Q-06B-5 — Locale-translated strings (`$"..."`)
+
+**Doc:** PLAN_06 §13.8 Q06B.5.
+**Default:** refuse cleanly in v1; document as deferred.
+**Alternative:** no-op (treat as `"..."`), matching some POSIX
+shells.
+**Why it matters:** real i18n support requires a message catalog
+loader (out of scope for v1); the no-op alternative silently
+drops translations, which is a footgun for users who do use them.
