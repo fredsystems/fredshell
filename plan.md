@@ -1,7 +1,10 @@
 # fredshell — Master Plan
 
-> Last updated: 2026-05-22 — PLAN_09 drafted (grammar-aware fuzzer +
-> differential oracle, B-phase, gates PLAN_06 Phase B via 06.0).
+> Last updated: 2026-05-22 — PLAN_07 scope augmented: owns
+> `history`/`fc` builtins, `yield_terminal` primitive (answers
+> PLAN_10 Q10.5), and L4 PTY harness. PLAN_09 drafted
+> (grammar-aware fuzzer + differential oracle, B-phase, gates
+> PLAN_06 Phase B via 06.0).
 > Earlier on 2026-05-21: restructured PLAN numbering: PLAN_06a/06b
 > collapsed into PLAN_06 (exec); old PLAN_07 narrowed to line editor;
 > PLAN_08/09/10 introduced for spec drafting, fuzzer/differential, and
@@ -77,7 +80,7 @@ Foundational decisions shape everything else and are recorded as ADRs:
 | 04  | `Documents/PLAN_04_terminal_io.md`     | A     | implemented   | Raw mode discipline, signals, process groups, terminal feature detection, kitty keyboard negotiation.                                                                                                                 |
 | 05  | `Documents/PLAN_05_testing.md`         | A     | implemented   | Spec-test harness, corpus methodology, oils-spec integration, real-world script corpus, CI metrics.                                                                                                                   |
 | 06  | `Documents/PLAN_06_exec.md`            | A/B   | mixed         | Execution pipeline. Skeleton (parse, `run_source`, `ExecEnv`, `RunResult`, `ExecError`, `Tier2Builtin`) implemented; semantics breadth (native parser, pipelines, redirection, expansion, builtins) corpus-dependent. |
-| 07  | `Documents/PLAN_07_line_editor.md`     | A     | draft         | Line editor: key-byte decoder, history, completion, fuzzy search, keybindings, syntax highlighting. Includes ADR on `reedline` vs `rustyline` vs from-scratch.                                                        |
+| 07  | `Documents/PLAN_07_line_editor.md`     | A     | drafted       | Line editor: key-byte decoder, history, completion, fuzzy search, keybindings, syntax highlighting. Owns `history`/`fc` builtins, the `yield_terminal` primitive consumed by PLAN_10, and the L4 PTY harness.         |
 | 08  | `Documents/PLAN_08_spec_drafting.md`   | A     | drafted       | Spec sheet template (one per builtin + feature), batch-of-10 review cadence, lint extensions tying `support` rows to corpus cases.                                                                                    |     |
 | 09  | `Documents/PLAN_09_fuzzer.md`          | B     | drafted       | Grammar-aware deterministic fuzzer + differential oracle against pinned bash 5.3p9. Five tiers (F1 PR → F5 release gate). Gates PLAN_06 Phase B via 06.0 = "F1 green on main."                                        |
 | 10  | `Documents/PLAN_10_traps_and_jobs.md`  | B     | drafted       | Signal traps, job control, `wait`, `kill`, foreground/background. Corpus-dependent because trap semantics differ from POSIX in well-defined ways.                                                                     |
