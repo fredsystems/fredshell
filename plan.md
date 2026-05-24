@@ -1,6 +1,18 @@
 # fredshell — Master Plan
 
-> Last updated: 2026-05-22 — PLAN_06 Phase B drafted (§13: lexer
+> Last updated: 2026-05-23 — Full QUESTIONS_for_review.md
+> question-walk complete: all 18 open questions resolved
+> across Q-10-A..D, Q-08-A..D, Q-09-1..5, Q-06B-1..5.
+> PLAN_16 stub added as the permanent owning document for
+> `coproc` (resolves Q-10-D / Q-06B-2); PLAN_10 §5.1
+> dispatch-asymmetry note (Q-10-B) and §6 notification-dispatch
+> routing through `yield_terminal` (Q-10-C / Q10.5) landed.
+> PLAN_08 §2.2 added `utf8_locale` feature category (~80 total
+> sheets) covering UTF-8 correctness in v1; PLAN_15 row notes
+> pending M-15-utf8-fuzz milestone scheduled between v1.0
+> and v1.1.
+>
+> Earlier on 2026-05-22: PLAN_06 Phase B drafted (§13: lexer
 >
 > - parser, executor pipeline, `ShellState`, builtin inventory by
 >   owner, ADR 0004 two-stage sunset, 33-row subtask grid, five
@@ -76,23 +88,24 @@ Foundational decisions shape everything else and are recorded as ADRs:
 
 ## Planning documents
 
-| #   | Document                               | Phase | Status        | Summary                                                                                                                                                                                                               |
-| --- | -------------------------------------- | ----- | ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --- |
-| 01  | `Documents/PLAN_01_philosophy.md`      | A     | draft         | Goals, non-goals, target user, success criteria.                                                                                                                                                                      |
-| 02  | `Documents/PLAN_02_architecture.md`    | A     | draft         | Crate layout, module boundaries, key traits, dependency direction.                                                                                                                                                    |
-| 03  | `Documents/PLAN_03_ansi.md`            | A     | implemented   | `fredshell-ansi` crate: encoder API, minimal decoder, `Write`-based contract, allocation budget.                                                                                                                      |
-| 04  | `Documents/PLAN_04_terminal_io.md`     | A     | implemented   | Raw mode discipline, signals, process groups, terminal feature detection, kitty keyboard negotiation.                                                                                                                 |
-| 05  | `Documents/PLAN_05_testing.md`         | A     | implemented   | Spec-test harness, corpus methodology, oils-spec integration, real-world script corpus, CI metrics.                                                                                                                   |
-| 06  | `Documents/PLAN_06_exec.md`            | A/B   | mixed         | Execution pipeline. Phase A skeleton implemented; Phase B drafted (§13: lexer/parser, executor pipeline, `ShellState`, builtin inventory, ADR 0004 sunset, 33-row subtask grid). Phase B gated on 06b.0 (PLAN_09 F1). |
-| 07  | `Documents/PLAN_07_line_editor.md`     | A     | drafted       | Line editor: key-byte decoder, history, completion, fuzzy search, keybindings, syntax highlighting. Owns `history`/`fc` builtins, the `yield_terminal` primitive consumed by PLAN_10, and the L4 PTY harness.         |
-| 08  | `Documents/PLAN_08_spec_drafting.md`   | A     | drafted       | Spec sheet template (one per builtin + feature), batch-of-10 review cadence, lint extensions tying `support` rows to corpus cases.                                                                                    |     |
-| 09  | `Documents/PLAN_09_fuzzer.md`          | B     | drafted       | Grammar-aware deterministic fuzzer + differential oracle against pinned bash 5.3p9. Five tiers (F1 PR → F5 release gate). Gates PLAN_06 Phase B via 06.0 = "F1 green on main."                                        |
-| 10  | `Documents/PLAN_10_traps_and_jobs.md`  | B     | drafted       | Signal traps, job control, `wait`, `kill`, foreground/background. Corpus-dependent because trap semantics differ from POSIX in well-defined ways.                                                                     |
-| 11  | `Documents/PLAN_11_prompt.md`          | A     | draft         | Starship-style prompt renderer, configuration model, performance budget.                                                                                                                                              |
-| 12  | `Documents/PLAN_12_config.md`          | A     | draft pending | Config file format, layering, env vars, rc-file semantics.                                                                                                                                                            |
-| 13  | `Documents/PLAN_13_nix_integration.md` | A     | draft pending | Home-manager module surface, flake outputs, default-shell story.                                                                                                                                                      |
-| 14  | `Documents/PLAN_14_ai_features.md`     | A     | draft pending | NL→command, error explanation, provider abstraction, privacy boundaries.                                                                                                                                              |
-| 15  | `Documents/PLAN_15_milestones.md`      | B     | stub pending  | Phased roadmap: MVP → daily-driver → bash-replacement. Corpus-dependent.                                                                                                                                              |
+| #   | Document                               | Phase   | Status        | Summary                                                                                                                                                                                                               |
+| --- | -------------------------------------- | ------- | ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --- |
+| 01  | `Documents/PLAN_01_philosophy.md`      | A       | draft         | Goals, non-goals, target user, success criteria.                                                                                                                                                                      |
+| 02  | `Documents/PLAN_02_architecture.md`    | A       | draft         | Crate layout, module boundaries, key traits, dependency direction.                                                                                                                                                    |
+| 03  | `Documents/PLAN_03_ansi.md`            | A       | implemented   | `fredshell-ansi` crate: encoder API, minimal decoder, `Write`-based contract, allocation budget.                                                                                                                      |
+| 04  | `Documents/PLAN_04_terminal_io.md`     | A       | implemented   | Raw mode discipline, signals, process groups, terminal feature detection, kitty keyboard negotiation.                                                                                                                 |
+| 05  | `Documents/PLAN_05_testing.md`         | A       | implemented   | Spec-test harness, corpus methodology, oils-spec integration, real-world script corpus, CI metrics.                                                                                                                   |
+| 06  | `Documents/PLAN_06_exec.md`            | A/B     | mixed         | Execution pipeline. Phase A skeleton implemented; Phase B drafted (§13: lexer/parser, executor pipeline, `ShellState`, builtin inventory, ADR 0004 sunset, 33-row subtask grid). Phase B gated on 06b.0 (PLAN_09 F1). |
+| 07  | `Documents/PLAN_07_line_editor.md`     | A       | drafted       | Line editor: key-byte decoder, history, completion, fuzzy search, keybindings, syntax highlighting. Owns `history`/`fc` builtins, the `yield_terminal` primitive consumed by PLAN_10, and the L4 PTY harness.         |
+| 08  | `Documents/PLAN_08_spec_drafting.md`   | A       | drafted       | Spec sheet template (one per builtin + feature), batch-of-10 review cadence, lint extensions tying `support` rows to corpus cases.                                                                                    |     |
+| 09  | `Documents/PLAN_09_fuzzer.md`          | B       | drafted       | Grammar-aware deterministic fuzzer + differential oracle against pinned bash 5.3p9. Five tiers (F1 PR → F5 release gate). Gates PLAN_06 Phase B via 06.0 = "F1 green on main."                                        |
+| 10  | `Documents/PLAN_10_traps_and_jobs.md`  | B       | drafted       | Signal traps, job control, `wait`, `kill`, foreground/background. Corpus-dependent because trap semantics differ from POSIX in well-defined ways.                                                                     |
+| 11  | `Documents/PLAN_11_prompt.md`          | A       | draft         | Starship-style prompt renderer, configuration model, performance budget.                                                                                                                                              |
+| 12  | `Documents/PLAN_12_config.md`          | A       | draft pending | Config file format, layering, env vars, rc-file semantics.                                                                                                                                                            |
+| 13  | `Documents/PLAN_13_nix_integration.md` | A       | draft pending | Home-manager module surface, flake outputs, default-shell story.                                                                                                                                                      |
+| 14  | `Documents/PLAN_14_ai_features.md`     | A       | draft pending | NL→command, error explanation, provider abstraction, privacy boundaries.                                                                                                                                              |
+| 15  | `Documents/PLAN_15_milestones.md`      | B       | stub pending  | Phased roadmap: MVP → daily-driver → bash-replacement. Corpus-dependent. Pending entries: **M-15-utf8-fuzz** — UTF-8 differential-fuzz tier (`F2-utf8`) scheduled between v1.0 and v1.1 per PLAN_09 §11 Q09.5.        |
+| 16  | `Documents/PLAN_16_coproc.md`          | post-v1 | stub          | Coprocesses (`coproc`). Cuts across PLAN_06 parser, PLAN_10 jobs, PLAN_02 variables. v1 recognises and refuses; full implementation deferred. Owning home for the eventual work.                                      |
 
 ### Two-phase planning
 

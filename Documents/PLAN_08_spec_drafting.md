@@ -1,6 +1,18 @@
 # PLAN_08 — Spec-Sheet Drafting Methodology
 
-> Last updated: 2026-05-22 — initial draft.
+> Last updated: 2026-05-23 — §4 template canonicalises
+> `Tier: feature` (resolves Q08.1 / Q-08-A); §5.3 documents the
+> "workarounds are best-effort guidance, not contract" policy
+> (resolves Q08.2 / Q-08-B); §3 template adds optional
+> `### 3.A`-style sub-headers for long sheets and permits
+> multi-row shared corpus references; §2.1 flags `set` and
+> `shopt` as the two unusually long sheets (resolves Q08.3 /
+> Q-08-C); §8.2 documents the rebuild-coupling trade-off of
+> compile-time `refuse!` validation (resolves Q08.4 / Q-08-D).
+> §2.2 adds the UTF-8 / locale feature category and §2.3 bumps
+> the total to ~80 sheets, covering locale correctness in v1
+> while PLAN_09's UTF-8 fuzz tier is post-v1 (Q-09-5).
+> Earlier on 2026-05-22 — initial draft.
 > Phase: B. Status: stub (methodology drafted; sheets pending).
 > Consumes: PLAN_05 §3 corpus structure, PLAN_05 §11 builtin
 > inventory; ADR 0003 test-first methodology; ADR 0001 builtin
@@ -80,6 +92,13 @@ Approximately 57 Tier-1 builtins from PLAN_05 §11. Owners:
   `dirs`, `getopts`, `hash`, `help`, `logout`, `mapfile`, `popd`,
   `printf`, `pushd`, `read`, `readarray`, `type`, `ulimit`, `umask`.
 
+Two sheets in this set are unusually long because of bash's
+broad option surfaces: `set` (~80 rows: one per `-o` longopt
+plus combinatoric edge rows) and `shopt` (~50 rows). Drafters
+of those two sheets should expect the volume and section
+the support matrix with `### 3.A`-style sub-headers per §4.
+All other Tier-1 sheets are 5–25 rows.
+
 ### 2.2. Grammar features (one sheet each)
 
 The grammar inventory, sourced from PLAN_05 §3.4 and bash's
@@ -109,14 +128,26 @@ reference manual:
   `function name { ... }`).
 - **Pipelines and lists:** `|`, `|&`, `&&`, `||`, `;`, `&`,
   `!` (pipeline negation).
+- **UTF-8 and locale behaviour:** byte-vs-char `${#var}` and
+  `${var:offset:len}`, multibyte glob ranges and bracket
+  expressions, `LC_COLLATE` ordering for `case` and `[[` `<`/`>`,
+  `LC_CTYPE` effects on `[[:alpha:]]`-style classes, UTF-8
+  identifier bytes in variable names (where bash accepts them),
+  `$'\uXXXX'` and `$'\UXXXXXXXX'` escapes, `printf %b`
+  multibyte handling. This category exists because PLAN_09's
+  v1 fuzzer is `LC_ALL=C`-only (PLAN_09 §11 Q09.5); locale
+  correctness is therefore hand-curated here until the
+  post-v1 `F2-utf8` fuzz tier ships (PLAN_15 milestone
+  M-15-utf8-fuzz). Cases live in `tests/spec/utf8_locale/`.
 
-That is approximately 22 feature sheets.
+That is approximately 22 feature sheets plus one UTF-8/locale
+sheet for ~23 total.
 
 ### 2.3. Total
 
-Tier-1 builtins: ~57 sheets. Features: ~22 sheets. **Total: ~79
-sheets.** This number is the basis for the batch-of-10 review
-cadence in §7.
+Tier-1 builtins: ~57 sheets. Features: ~23 sheets (including
+the UTF-8/locale sheet from §2.2). **Total: ~80 sheets.** This
+number is the basis for the batch-of-10 review cadence in §7.
 
 ### 2.4. What does _not_ get a sheet
 
@@ -173,12 +204,25 @@ Every sheet has the same top-level structure. Deviations are not
 permitted; the template is enforced by `cargo xtask check-specs`
 (added in subtask 08.4).
 
+A single template covers both builtin sheets and feature sheets.
+The only field that differs is `Tier:`:
+
+- Builtin sheets (path under `Documents/specs/builtins/`) must
+  carry `Tier: 1` or `Tier: 2`.
+- Feature sheets (path under `Documents/specs/features/`) must
+  carry the canonical marker `Tier: feature`.
+
+The linter rejects any other combination: a builtin sheet with
+`Tier: feature` is an error, as is a feature sheet with a
+numeric tier. This gives the cross-kind type-checking benefit
+without forcing two templates.
+
 ```markdown
 # `<name>` — <one-line bash summary>
 
 > Status: <draft | review | approved | superseded>
 > Owner: PLAN_XX
-> Tier: <1 | 2> # builtins only
+> Tier: <1 | 2 | feature> # `feature` only on feature sheets
 > Sources: bash X.Y manual §"NAME"; POSIX.1-2024 §"NAME"
 > Corpus: tests/spec/<category>/<case>.case.toml (one per support row)
 > Last updated: YYYY-MM-DD
@@ -209,6 +253,26 @@ table is the contract.
 Every row's Behaviour cell is one sentence in present tense,
 referencing exact bash syntax in backticks. Vague rows
 ("supports all forms") are forbidden; each form is one row.
+
+**Sub-headers for long sheets.** Sheets with more than roughly
+30 rows (notably `set` and `shopt`, both ~50–80 rows) may
+section the support matrix with `### 3.A — <category>`-style
+sub-headers grouping related rows for readability. Sub-headers
+are advisory only; they do not affect row numbering (rows
+remain `3.1`, `3.2`, …) and `xtask check-specs` ignores them
+when validating the matrix. Sheets with 30 rows or fewer should
+omit sub-headers.
+
+**Multi-row case references.** The default is one corpus case
+per `support` row. A single corpus case _may_ be referenced by
+multiple support rows when those rows describe behaviours
+whose contract is meaningfully verified together (e.g., the
+three `set` error-handling options exercised in combination).
+The linter validates the forward direction (every `support`
+row points to a case file that exists); the reverse direction
+(multiple rows pointing to the same case) is permitted.
+Drafters reusing a case must verify its assertions cover each
+referenced row's specific behaviour.
 
 ## 4. Bash quirks
 
@@ -323,6 +387,28 @@ to milestone <N> (<milestone-name>). <workaround>. See:
 The workaround is mandatory and is the most useful field for
 the user. A `defer` row without a workaround is forbidden by
 `xtask check-specs`.
+
+**Workarounds are best-effort guidance, not contract.** The
+workaround is the sheet drafter's good-faith hint about how to
+emulate the missing behaviour until milestone N lands; it is
+_not_ a binding promise. If the workaround later breaks because
+of unrelated changes (a builtin's flag set narrows, an
+expansion pass tightens, a corpus case revises edge handling),
+the workaround is updated in the next sheet review — but
+fredshell does not owe a backwards-compatible fix to keep the
+original workaround working. Users following workarounds should
+treat them like any other deferred-feature guidance: useful
+today, subject to revision.
+
+This policy is intentional. Promoting workarounds to contract
+would require a corpus case per workaround (estimated
+150–200 additional v1 cases across the sheet inventory), most
+of which would be brittle (workarounds frequently emulate
+multi-step behaviours that change shape as adjacent features
+mature). The cost-benefit does not survive the v1 corpus
+budget. Drafters who want a stronger guarantee for a specific
+workaround should propose promoting the underlying row to
+`support` instead.
 
 When milestone N lands and the row is implemented, the row's
 classification flips to `support`, the workaround field is
@@ -452,6 +538,20 @@ and extracts the row text. If the row does not exist, compile
 fails. If the row is not classified `wontfix`, compile fails.
 This is the link between prose and code.
 
+**Rebuild coupling — accepted trade-off.** Compile-time
+validation means every sheet edit triggers a rebuild of every
+crate containing a `refuse!` referencing that sheet. During
+the high-churn drafting phase (subtasks 08.2 and 08.6), this
+will cause frequent `fredshell-core` rebuilds. This cost is
+accepted in exchange for the build-time guarantee that no
+broken refusal can ship: a misspelled row ID, a deleted row,
+or a row whose classification flipped to `support` (meaning
+the refusal must be removed) all fail at the call site, not
+in CI. Implementations target `proc_macro2` + a small
+`syn`-style parser over the sheet's §3 table, so the per-call
+expansion cost is bounded; the dominant cost is one
+`include_str!` per crate per sheet referenced.
+
 ### 8.3. Sheet-driven help text
 
 `help <builtin>` (the bash builtin) reads its content from the
@@ -494,17 +594,28 @@ subtask 08.6 unblocks PLAN_06 Phase B's implementation.
 
 - **Q08.1** — Should feature sheets and builtin sheets share a
   template, or is the feature template slightly different
-  (e.g., no Tier line)? Default: same template, leave the Tier
-  line blank for features. Alternative: two templates. The
-  consistency win probably beats the small empty-field cost.
+  (e.g., no Tier line)? **Resolved (2026-05-23):** single
+  template; feature sheets carry the canonical marker
+  `Tier: feature` (linted by path). See §4.
 - **Q08.2** — Are `defer:N` workarounds binding? If we promise
   "use `cd && ls`" and that breaks for someone, do we owe them
-  a fix? Default: no, the workaround is best-effort guidance,
-  not contract.
+  a fix? **Resolved (2026-05-23):** no, workarounds are
+  best-effort guidance, not contract. See §5.3 for the
+  policy and rationale.
 - **Q08.3** — How do we handle bash's many `-o` longopts for
   `set` and `shopt`? Each is conceptually a row. That makes
-  the `set` sheet ~80 rows long. Default: one row per `-o`
-  option, accept the sheet length; the table is the contract.
+  the `set` sheet ~80 rows long. **Resolved (2026-05-23):**
+  one row per `-o` option; the §4 template permits
+  `### 3.A`-style sub-headers in long sheets for readability
+  and allows multiple support rows to reference a shared
+  corpus case when their behaviours are meaningfully verified
+  together. See §2.1 (long-sheet note) and §3 in the template.
+- **Q08.4** — Should `refuse!` validate sheet row references
+  at compile time (`include_str!`) or at runtime (offline
+  `xtask check-specs` only)? **Resolved (2026-05-23):**
+  compile-time validation per §8.2. Rebuild-coupling cost
+  during the drafting phase is accepted in exchange for the
+  guarantee that no broken refusal can ship.
 
 ## 12. Relationship to other plans
 
