@@ -42,7 +42,7 @@ cargo xtask compat --tier 1
 
 # Restrict to cases with a given declared status (PLAN_05 §12).
 cargo xtask compat --status pass
-cargo xtask compat --status deferred:PLAN_06
+cargo xtask compat --status deferred:PLAN_11
 
 # Emit a machine-readable JSON report.
 cargo xtask compat --json target/compat-report.json
@@ -68,7 +68,7 @@ migration note in this file.
     "regression": 0,
     "expected_fail": 0,
     "wontfix_honored": 0,
-    "deferred_honored": { "PLAN_06": 2 },
+    "deferred_honored": { "PLAN_11": 2 },
     "reclassify": 0,
     "total": 3,
     "pass_rate_numerator": 1,
@@ -165,7 +165,7 @@ The `kind` discriminator selects the payload:
 { "kind": "regression" }
 { "kind": "expected_fail" }
 { "kind": "wontfix_honored" }
-{ "kind": "deferred_honored", "plan": "PLAN_06" }
+{ "kind": "deferred_honored", "plan": "PLAN_11" }
 {
   "kind": "reclassify",
   "from": "fail",

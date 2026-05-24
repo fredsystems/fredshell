@@ -1,8 +1,8 @@
-# PLAN_10 — Traps, Signal Disposition, and Job Control
+# PLAN_12 — Traps, Signal Disposition, and Job Control
 
 > Last updated: 2026-05-23 — §5.1 dispatch-asymmetry note added
 > (resolves Q-10-B); §6 notification-dispatch subsection added
-> routing through PLAN_07 `yield_terminal` (resolves Q-10-C);
+> routing through PLAN_13 `yield_terminal` (resolves Q-10-C);
 > Q10.3 / Q-10-D resolved by `PLAN_16_coproc.md` stub.
 > Phase: B. Status: stub (drafted; implementation pending).
 > Consumes: PLAN_02 §4, §5, §6.1; PLAN_04 §4, §7; PLAN_06 Phase A §2,
@@ -22,18 +22,18 @@ signal-dispatch loop), and the boundary contract between
 
 PLAN*04 already provides the primitives: `setpgid`, `tcsetpgrp`,
 `pselect`/`signalfd`, signal masking, the cooperative-cancellation
-flag, and SIGCHLD wait-loop scaffolding. **PLAN_10 is the policy
+flag, and SIGCHLD wait-loop scaffolding. **PLAN_12 is the policy
 layer.** It decides \_when* a child is given the controlling
 terminal, _what_ happens when SIGINT arrives during a script,
 _how_ `trap '...' EXIT` interacts with a non-zero exit, and _which_
 of the eight job-control builtins are exposed.
 
-PLAN_10 is Phase B because it cannot be designed correctly without
+PLAN_12 is Phase B because it cannot be designed correctly without
 the spec corpus telling us which bash quirks real-world scripts
 depend on. The harness shipped by PLAN_05 already enumerates the
 gap: `tests/spec/job_control/background_wait.case.toml`,
 `tests/spec/traps_and_signals/trap_exit.case.toml`, and the
-deferred rows in PLAN_05 §11 are PLAN_10's executable
+deferred rows in PLAN_05 §11 are PLAN_12's executable
 acceptance criteria.
 
 ## 1. Scope and non-scope
@@ -73,10 +73,10 @@ acceptance criteria.
 
 - **The signal primitives themselves.** Installing `sigaction`
   handlers, reading from `signalfd` / the self-pipe, masking and
-  unmasking — all owned by PLAN*04 §4. PLAN_10 \_subscribes* to
+  unmasking — all owned by PLAN*04 §4. PLAN_12 \_subscribes* to
   PLAN_04's signal delivery, it does not duplicate it.
-- **`fc` and `history`.** Owned by PLAN_07 (line editor / history
-  subsystem). PLAN_10 has no opinion on command history.
+- **`fc` and `history`.** Owned by PLAN_13 (line editor / history
+  subsystem). PLAN_12 has no opinion on command history.
 - **Coprocesses (`coproc`).** A grammar-level construct with its own
   bidirectional-pipe and PID-management semantics. Deferred to a
   later phase; owned by `PLAN_16_coproc.md` (stub).
@@ -85,17 +85,17 @@ acceptance criteria.
   for v1 entirely.
 - **Process accounting.** `times` is a Tier-1 builtin owned by
   PLAN_06 (it reads `times(2)` and prints; no policy decisions).
-  PLAN_10 does not touch it.
+  PLAN_12 does not touch it.
 - **POSIX-only job control mode.** Bash has a `--posix` mode that
   alters some trap and job semantics (most notably the disposition
   of `trap` in subshells). v1 implements the default-bash semantics
   only; `--posix` differences are tracked but not gated.
 
 The boundary rule, complementary to PLAN_04 §1's: **PLAN_04 owns the
-syscalls; PLAN_10 owns the policy.** A SIGCHLD arrives at PLAN_04's
+syscalls; PLAN_12 owns the policy.** A SIGCHLD arrives at PLAN_04's
 self-pipe; PLAN_04 calls `waitpid(-1, …, WNOHANG | WUNTRACED)` in a
-loop and hands a `Vec<ChildStatusChange>` to PLAN_10's reaper;
-PLAN_10 updates the job table, runs any installed `trap` handlers,
+loop and hands a `Vec<ChildStatusChange>` to PLAN_12's reaper;
+PLAN_12 updates the job table, runs any installed `trap` handlers,
 and decides whether to print a status line. PLAN_04 never reads or
 writes the job table.
 
@@ -104,7 +104,7 @@ writes the job table.
 1. **Bash semantics by default.** Real-world scripts depend on bash
    quirks (e.g., `trap` in a subshell, inherited disposition of
    `SIGINT` during command substitution). Where bash and POSIX
-   disagree, we follow bash. The differential harness (PLAN_09) is
+   disagree, we follow bash. The differential harness (PLAN_08) is
    the arbiter when prose is ambiguous.
 
 2. **Synchronous reaping.** Job-table updates happen in the main
@@ -116,7 +116,7 @@ writes the job table.
 3. **No `Arc<Mutex<JobTable>>`.** The job table lives on
    `ShellState`, which lives on `ExecEnv`, which is single-threaded
    by construction (PLAN_02 §4.2). If a future feature requires
-   cross-thread access it gets a separate plan; PLAN_10 does not
+   cross-thread access it gets a separate plan; PLAN_12 does not
    pre-pay that cost.
 
 4. **Traps are not handlers.** A user's `trap '...' SIGINT` does
@@ -148,12 +148,12 @@ Result<JobRef, JobSpecError>`. Duplicating this is a category of
    directly to fd 2.
 
 8. **Monitor mode is the default for interactive shells, off for
-   scripts.** Same as bash. `set -m` flips it; PLAN_10 reads
+   scripts.** Same as bash. `set -m` flips it; PLAN_12 reads
    `ShellState::opts.monitor` on every relevant decision.
 
 ## 3. Crate placement and module layout
 
-PLAN_10's code lives in `crates/fredshell-core/src/`. No new crate
+PLAN_12's code lives in `crates/fredshell-core/src/`. No new crate
 is introduced. The module layout:
 
 ```text
@@ -188,7 +188,7 @@ disambiguates from the `jobs` and `trap` module/type names. Other
 builtin files use the bare command name because there is no
 collision.
 
-`ShellState` is defined in PLAN_06 Phase B; PLAN_10 adds two fields.
+`ShellState` is defined in PLAN_06 Phase B; PLAN_12 adds two fields.
 The struct layout for those fields is fixed by this document:
 
 ```rust
@@ -507,14 +507,14 @@ drains the self-pipe and calls:
 fn process_pending_signals(env: &mut ExecEnv) -> ControlFlow<ExitStatus, ()>;
 ```
 
-This function, owned by PLAN_10, does:
+This function, owned by PLAN_12, does:
 
 1. For each delivered real signal `sig`:
    - If `env.shell.traps.entries.contains(TrapKind::Signal(sig))`,
      run the trap body in the current shell context.
    - Otherwise apply the default disposition (which for SIGINT in
      an interactive shell is "abandon the current command line,
-     redraw prompt"; PLAN_07 will own the redraw side).
+     redraw prompt"; PLAN_13 will own the redraw side).
 2. If `env.shell.opts.errtrace && last_status != 0`, fire ERR.
 3. If `env.shell.opts.functrace`, fire DEBUG (between simple
    commands) and RETURN (on function exit).
@@ -540,8 +540,8 @@ called in the executor's fork path.
 
 ## 6. The eight job-control builtins
 
-Each builtin in this section is a Tier-1 builtin owned by PLAN_10.
-Spec sheets for each (per PLAN_08) live under
+Each builtin in this section is a Tier-1 builtin owned by PLAN_12.
+Spec sheets for each (per PLAN_07) live under
 `Documents/specs/builtins/`. This section gives the contract; the
 sheets give the per-flag, per-edge-case behaviour.
 
@@ -554,9 +554,9 @@ prompt time, and the immediate notifications printed under
 
 - **If a line-editor session is active** (interactive shell at
   the prompt, raw mode engaged), route the line through
-  `editor.yield_terminal(|stdout| { … })`. PLAN_07 §9.5 owns the
+  `editor.yield_terminal(|stdout| { … })`. PLAN_13 §9.5 owns the
   primitive and its three invariants (total state restoration,
-  no keystrokes lost, SIGWINCH honoured during yield). PLAN_10
+  no keystrokes lost, SIGWINCH honoured during yield). PLAN_12
   never touches raw mode directly.
 - **Otherwise** (non-interactive shell, or interactive shell
   with a foreground pipeline running and no prompt up), write
@@ -768,7 +768,7 @@ sleep 100; ^C` exits 130, not 0.
 
 ## 8. Public API summary
 
-Everything PLAN_10 exposes to the rest of the codebase, in one
+Everything PLAN_12 exposes to the rest of the codebase, in one
 place:
 
 ```rust
@@ -798,7 +798,7 @@ pub fn process_pending_signals(
 ```
 
 Builtins are registered through the existing Tier-1 dispatch
-table from PLAN_06; PLAN_10 contributes eight entries.
+table from PLAN_06; PLAN_12 contributes eight entries.
 
 ## 9. Testing strategy
 
@@ -829,24 +829,24 @@ The spec corpus owns the integration tests. Categories:
   builtin in §6.
 
 Each case marked `pass` becomes a regression guard. Cases marked
-`deferred:PLAN_10` are the implementation worklist.
+`deferred:PLAN_12` are the implementation worklist.
 
 ### 9.3. PTY harness (L4)
 
 Several behaviours can only be tested with a real PTY:
 
 - `fg` foreground transfer (requires a controlling tty).
-- `^C` SIGINT delivery during command read (requires PLAN_07's
+- `^C` SIGINT delivery during command read (requires PLAN_13's
   line editor).
 - Monitor-mode status-line printing at prompt time.
 
-The PTY harness is owned by PLAN_07 §"pty harness". PLAN_10
-contributes test cases against it; PLAN_07 owns the harness
+The PTY harness is owned by PLAN_13 §"pty harness". PLAN_12
+contributes test cases against it; PLAN_13 owns the harness
 machinery.
 
 ### 9.4. Differential testing (L5)
 
-Every Tier-1 builtin in §6 must pass through PLAN_09's
+Every Tier-1 builtin in §6 must pass through PLAN_08's
 differential program before its corpus case is marked `pass`.
 The differential program runs the same script under fredshell
 and pinned bash, then compares stdout, stderr, and exit status.
@@ -873,7 +873,7 @@ signals) is one atomic load: `pending_signals.load(Relaxed)`.
 
 ## 11. Migration and rollout
 
-PLAN_10 is Phase B and lands after the PLAN_09 differential
+PLAN_12 is Phase B and lands after the PLAN_08 differential
 harness is green against bash. Recommended landing order:
 
 | Subtask | Surface                                     | Gate                       |
@@ -888,11 +888,11 @@ harness is green against bash. Recommended landing order:
 | 10.8    | `kill`, `wait` builtins                     | 10.6                       |
 | 10.9    | `trap` builtin (all forms)                  | 10.3, 10.4, 10.5           |
 | 10.10   | EXIT / ERR / DEBUG / RETURN pseudo-signals  | 10.9                       |
-| 10.11   | Monitor-mode notification at prompt         | 10.6, 10.10, PLAN_07 ready |
-| 10.12   | Differential parity sweep against bash      | all above, PLAN_09 green   |
+| 10.11   | Monitor-mode notification at prompt         | 10.6, 10.10, PLAN_13 ready |
+| 10.12   | Differential parity sweep against bash      | all above, PLAN_08 green   |
 
 Each subtask is a single PR with a corpus case (or set of cases)
-flipping from `deferred:PLAN_10` to `pass`.
+flipping from `deferred:PLAN_12` to `pass`.
 
 ## 12. Open questions
 
@@ -908,7 +908,7 @@ plan document; they are flagged for the implementation phase.
   decision and a test before 10.8.
 - **Q10.3** — `coproc`. Deferred from v1. **Resolved:** the
   eventual implementation is owned by `PLAN_16_coproc.md`
-  (stub landed 2026-05-23). PLAN_10's role when that work
+  (stub landed 2026-05-23). PLAN_12's role when that work
   picks up is to provide the job-table entry and the
   `NAME_PID` binding; PLAN_06 will own grammar and executor.
   v1 emits a parser refusal.
@@ -919,8 +919,8 @@ plan document; they are flagged for the implementation phase.
 - **Q10.5** — `set -b` (immediate notification) requires printing
   status lines from `process_pending_signals`, which can be
   called mid-command. The terminal state may be in raw mode
-  (line editor active). **Resolved:** PLAN_07 §9.5 owns the
-  `yield_terminal` primitive; PLAN_10 §6 routes all
+  (line editor active). **Resolved:** PLAN_13 §9.5 owns the
+  `yield_terminal` primitive; PLAN_12 §6 routes all
   job-notification lines through it when an editor session is
   active, and writes directly to stderr otherwise.
 
@@ -931,22 +931,22 @@ plan document; they are flagged for the implementation phase.
   per PLAN_06 Phase B §13's prediction.
 - **PLAN_04** — consumes `tcsetpgrp`/`setpgid` from §7, the
   self-pipe / signalfd from §4, the SIGTTOU mask helper from §4.
-  PLAN_04 does not change; PLAN_10 only consumes.
+  PLAN_04 does not change; PLAN_12 only consumes.
 - **PLAN_05** — owns the spec-corpus rows for `bg`, `fg`, `jobs`,
-  `kill`, `wait`, `trap`, `disown`, `suspend`. PLAN_10's
+  `kill`, `wait`, `trap`, `disown`, `suspend`. PLAN_12's
   acceptance criteria are PLAN_05 cases flipping to `pass`.
-- **PLAN_06 Phase A** — exposes Tier-1 dispatch; PLAN_10
+- **PLAN_06 Phase A** — exposes Tier-1 dispatch; PLAN_12
   contributes eight builtin entries to the inventory.
-- **PLAN_06 Phase B** — depends on PLAN_10 to remove the
+- **PLAN_06 Phase B** — depends on PLAN_12 to remove the
   `/bin/sh -c` fallback for any script using `trap`, `wait`, or
-  `&`. PLAN_06 §13 already cites PLAN_10 as the owner.
-- **PLAN_07** — owns the L4 PTY harness PLAN_10 uses for `fg`
+  `&`. PLAN_11 already cites PLAN_12 as the owner.
+- **PLAN_13** — owns the L4 PTY harness PLAN_12 uses for `fg`
   testing; owns the "yield terminal for status line" primitive
-  PLAN_10 needs in monitor mode (Q10.5).
-- **PLAN_08** — produces the per-builtin spec sheets for the
+  PLAN_12 needs in monitor mode (Q10.5).
+- **PLAN_07** — produces the per-builtin spec sheets for the
   eight builtins in §6 before their corresponding subtasks land.
-- **PLAN_09** — produces the differential harness whose
-  green-against-bash status gates the PLAN_10 implementation
+- **PLAN_08** — produces the differential harness whose
+  green-against-bash status gates the PLAN_12 implementation
   phase (per ADR 0003).
 
 ## 14. Implementation log
@@ -966,12 +966,12 @@ dated entry with PR hash and a one-line summary.
   `ShellState` shape; §4 (data model), §5 (subsystem layout),
   §6.1 (signal plumbing).
 - `Documents/PLAN_04_terminal_io.md` — §4 signal policy, §7
-  process-group plumbing, §5 capability detection. PLAN_10
+  process-group plumbing, §5 capability detection. PLAN_12
   consumes; PLAN_04 does not change.
 - `Documents/PLAN_05_testing.md` — §3.4 corpus categories
   (`job_control`, `traps_and_signals`), §11 builtin inventory
-  (rows assigned to PLAN_10), §12 status taxonomy
-  (`deferred:PLAN_10`).
+  (rows assigned to PLAN_12), §12 status taxonomy
+  (`deferred:PLAN_12`).
 - `Documents/PLAN_06_exec.md` — Phase A dispatch surface; Phase
   B §13 (this document is what §13 punted to).
 - `Documents/PLAN_07_line_editor.md` (pending) — PTY harness;
@@ -986,6 +986,6 @@ dated entry with PR hash and a one-line summary.
   — establishes that the corpus, not prose, is the source of
   truth for "what fredshell must do."
 - `Documents/decisions/0004-strict-default-execution.md` — the
-  `/bin/sh -c` fallback PLAN_10 indirectly retires for scripts
+  `/bin/sh -c` fallback PLAN_12 indirectly retires for scripts
   using job control or traps.
 - bash reference manual, "JOB CONTROL" and "SIGNALS" sections.

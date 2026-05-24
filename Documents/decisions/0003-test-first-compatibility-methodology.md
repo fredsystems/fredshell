@@ -90,13 +90,13 @@ Planning documents are split into two phases:
 - **Phase A** docs are corpus-independent and drafted before the corpus
   exists. These include the testing methodology itself (PLAN_05), crate
   architecture (PLAN_02), foundational subsystems (PLAN_03, PLAN_04,
-  PLAN_07, PLAN_11), and peripheral design (PLAN_12, PLAN_13, PLAN_14).
+  PLAN_13, PLAN_14), and peripheral design (PLAN_12, PLAN_13, PLAN_14).
 - **Phase B** docs are corpus-dependent. They receive stubs during
   Phase A and are fully drafted only after the v1 corpus is curated
   and the harness reports a baseline pass-rate. These are: the bash
   compat executor and Tier-1 builtin inventory (PLAN_06 Phase B),
-  spec-sheet drafting (PLAN_08), the fuzzer / differential program
-  (PLAN_09), traps and job control (PLAN_10), and the implementation
+  spec-sheet drafting (PLAN_07), the fuzzer / differential program
+  (PLAN_08), traps and job control (PLAN_12), and the implementation
   roadmap (PLAN_15). Drafting these before the corpus
   exists would mean guessing at priorities; drafting them after means
   data-driven prioritization.

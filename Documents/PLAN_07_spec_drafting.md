@@ -1,4 +1,4 @@
-# PLAN_08 — Spec-Sheet Drafting Methodology
+# PLAN_07 — Spec-Sheet Drafting Methodology
 
 > Last updated: 2026-05-23 — §4 template canonicalises
 > `Tier: feature` (resolves Q08.1 / Q-08-A); §5.3 documents the
@@ -11,14 +11,14 @@
 > compile-time `refuse!` validation (resolves Q08.4 / Q-08-D).
 > §2.2 adds the UTF-8 / locale feature category and §2.3 bumps
 > the total to ~80 sheets, covering locale correctness in v1
-> while PLAN_09's UTF-8 fuzz tier is post-v1 (Q-09-5).
+> while PLAN_08's UTF-8 fuzz tier is post-v1 (Q-09-5).
 > Earlier on 2026-05-22 — initial draft.
 > Phase: B. Status: stub (methodology drafted; sheets pending).
 > Consumes: PLAN_05 §3 corpus structure, PLAN_05 §11 builtin
 > inventory; ADR 0003 test-first methodology; ADR 0001 builtin
 > tiers. Consumed by: PLAN_06 Phase B (each PLAN_06 subtask requires
-> a `support`-classed sheet before implementation); PLAN_09 (uses
-> sheets as the prose oracle for differential cases); PLAN_10
+> a `support`-classed sheet before implementation); PLAN_08 (uses
+> sheets as the prose oracle for differential cases); PLAN_12
 > (each of the eight job-control builtins requires a sheet before
 > the corresponding 10.N subtask lands).
 
@@ -67,7 +67,7 @@ classify each one_:
 
 Every behaviour in bash's surface has exactly one classification.
 A sheet with un-classified rows is incomplete; it cannot drive a
-PLAN_06 / PLAN_10 subtask.
+PLAN_06 / PLAN_12 subtask.
 
 ## 2. What gets a sheet
 
@@ -85,10 +85,10 @@ Approximately 57 Tier-1 builtins from PLAN_05 §11. Owners:
   `shopt`, `source`, `test`, `times` (from PLAN_06), `true`,
   `typeset`, `unalias`, `unset`, plus the 8 already-implemented
   rows kept for reference).
-- 8 sheets owned by PLAN_10 (`bg`, `fg`, `jobs`, `kill`, `wait`,
+- 8 sheets owned by PLAN_12 (`bg`, `fg`, `jobs`, `kill`, `wait`,
   `disown`, `suspend`, `trap`).
-- 2 sheets owned by PLAN_07 (`fc`, `history`).
-- 7 sheets in "PLAN_10 extended utilities" category: `caller`,
+- 2 sheets owned by PLAN_13 (`fc`, `history`).
+- 7 sheets in "PLAN_12 extended utilities" category: `caller`,
   `dirs`, `getopts`, `hash`, `help`, `logout`, `mapfile`, `popd`,
   `printf`, `pushd`, `read`, `readarray`, `type`, `ulimit`, `umask`.
 
@@ -134,8 +134,8 @@ reference manual:
   `LC_CTYPE` effects on `[[:alpha:]]`-style classes, UTF-8
   identifier bytes in variable names (where bash accepts them),
   `$'\uXXXX'` and `$'\UXXXXXXXX'` escapes, `printf %b`
-  multibyte handling. This category exists because PLAN_09's
-  v1 fuzzer is `LC_ALL=C`-only (PLAN_09 §11 Q09.5); locale
+  multibyte handling. This category exists because PLAN_08's
+  v1 fuzzer is `LC_ALL=C`-only (PLAN_08 §11 Q09.5); locale
   correctness is therefore hand-curated here until the
   post-v1 `F2-utf8` fuzz tier ships (PLAN_15 milestone
   M-15-utf8-fuzz). Cases live in `tests/spec/utf8_locale/`.
@@ -155,7 +155,7 @@ number is the basis for the batch-of-10 review cadence in §7.
   utilities" whose contract is determined by usage, not by
   matching bash. They get individual planning when they are
   proposed.
-- **`coproc`.** Deferred from v1 entirely (PLAN_10 §12 Q10.3).
+- **`coproc`.** Deferred from v1 entirely (PLAN_12 §12 Q10.3).
   It will get a sheet when its owning plan exists.
 - **POSIX-`--posix` mode.** Not a v1 target; sheets describe
   default-bash semantics only. POSIX-only behaviour is noted in
@@ -329,10 +329,10 @@ artifacts:
 - An implementation that makes the case pass.
 
 The case is written _before_ the implementation. The case starts
-life as `status = "deferred:PLAN_06"` (or 10, or 07), and flips
+life as `status = "deferred:PLAN_11"` (or 10, or 07), and flips
 to `status = "pass"` in the subtask that ships the
 implementation. This is the same workflow PLAN_05 §11 already
-describes; PLAN_08 sheets are the prose half of that contract.
+describes; PLAN_07 sheets are the prose half of that contract.
 
 ### 5.2. `wontfix`
 
@@ -487,7 +487,7 @@ batch 1:
    per-flag detail).
 
 Subsequent batches are organised by owning PLAN doc so that
-related behaviours are reviewed together (batch 2 = PLAN_10
+related behaviours are reviewed together (batch 2 = PLAN_12
 job-control builtins; batch 3 = grammar features for
 expansions; etc.).
 
@@ -500,7 +500,7 @@ PLAN doc is updated to record landing.
 
 ## 8. Spec-runner integration
 
-PLAN_05's spec runner already understands case status. PLAN_08
+PLAN_05's spec runner already understands case status. PLAN_07
 extends it with three integrations:
 
 ### 8.1. Cross-reference checker
@@ -578,16 +578,16 @@ corpus, not the sheets. Sheets are commentary on the corpus.
 
 | Subtask | Surface                                                               | Owner   | Gate                         |
 | ------- | --------------------------------------------------------------------- | ------- | ---------------------------- |
-| 08.1    | Author `Documents/specs/_TEMPLATE.md` and `Documents/specs/README.md` | PLAN_08 | none                         |
-| 08.2    | Draft and review batch 1 (10 sheets: `cd`, trivial builtins, state)   | PLAN_08 | 08.1                         |
-| 08.3    | Draft and review batch 2 (PLAN_10 job-control builtins)               | PLAN_08 | 08.2, PLAN_10 reviewed       |
-| 08.4    | `cargo xtask check-specs` cross-reference checker                     | PLAN_08 | 08.1                         |
-| 08.5    | `refuse!` macro and unit tests                                        | PLAN_08 | 08.1                         |
-| 08.6    | Draft and review batches 3–8 (~60 sheets, owner-grouped)              | PLAN_08 | 08.2                         |
+| 08.1    | Author `Documents/specs/_TEMPLATE.md` and `Documents/specs/README.md` | PLAN_07 | none                         |
+| 08.2    | Draft and review batch 1 (10 sheets: `cd`, trivial builtins, state)   | PLAN_07 | 08.1                         |
+| 08.3    | Draft and review batch 2 (PLAN_12 job-control builtins)               | PLAN_07 | 08.2, PLAN_12 reviewed       |
+| 08.4    | `cargo xtask check-specs` cross-reference checker                     | PLAN_07 | 08.1                         |
+| 08.5    | `refuse!` macro and unit tests                                        | PLAN_07 | 08.1                         |
+| 08.6    | Draft and review batches 3–8 (~60 sheets, owner-grouped)              | PLAN_07 | 08.2                         |
 | 08.7    | Sheet-driven `help` builtin                                           | PLAN_06 | 08.1, PLAN_06 Phase B `help` |
-| 08.8    | First wontfix refusal corpus cases (`tests/spec/refusals/`)           | PLAN_08 | 08.5                         |
+| 08.8    | First wontfix refusal corpus cases (`tests/spec/refusals/`)           | PLAN_07 | 08.5                         |
 
-Subtasks 08.2 and 08.3 unblock PLAN_10's implementation;
+Subtasks 08.2 and 08.3 unblock PLAN_12's implementation;
 subtask 08.6 unblocks PLAN_06 Phase B's implementation.
 
 ## 11. Open questions
@@ -619,17 +619,17 @@ subtask 08.6 unblocks PLAN_06 Phase B's implementation.
 
 ## 12. Relationship to other plans
 
-- **PLAN_05** — corpus and harness; PLAN_08 sheets reference
-  PLAN_05 cases by path; PLAN_05 §11 is the inventory PLAN_08
-  exhausts. PLAN_08 does not change the harness.
-- **PLAN_06 Phase B** — every PLAN_06 Phase B subtask is gated
-  on a `support`-classed sheet existing. PLAN_06 §13 already
-  cites PLAN_08.
-- **PLAN_09** — uses sheets as the prose oracle when deciding
+- **PLAN_05** — corpus and harness; PLAN_07 sheets reference
+  PLAN_05 cases by path; PLAN_05 §11 is the inventory PLAN_07
+  exhausts. PLAN_07 does not change the harness.
+- **PLAN_11** — every PLAN_11 (Phase B) subtask is gated
+  on a `support`-classed sheet existing. PLAN_11 already
+  cites PLAN_07.
+- **PLAN_08** — uses sheets as the prose oracle when deciding
   what to fuzz. The fuzzer's expectation file format
   references sheet row numbers.
-- **PLAN_10** — eight job-control builtin sheets are batch 2.
-  Each PLAN_10 subtask is gated on its sheet being approved.
+- **PLAN_12** — eight job-control builtin sheets are batch 2.
+  Each PLAN_12 subtask is gated on its sheet being approved.
 - **PLAN_15** — milestone-N labels in `defer:N` rows point at
   PLAN_15 milestone definitions.
 

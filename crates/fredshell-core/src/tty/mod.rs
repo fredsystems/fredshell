@@ -19,7 +19,7 @@
 //! It does **not** create pseudo-terminals (see `PLAN_04` §1 for the
 //! slave-side scope rationale), encode ANSI sequences (that is
 //! `fredshell-ansi`), or decode keystrokes into semantic events
-//! (that will be `PLAN_07`).
+//! (that will be `PLAN_13`).
 //!
 //! ## Public surface
 //!

@@ -29,7 +29,7 @@ Open questions in §10 that were resolved during implementation:
 - **§10 error type granularity.** Split into encoder-side (`AnsiError`) and
   decoder-side (`DecodeError`) per §5 of this document.
 - **§10 diff SGR encoder.** Not shipped in v1; revisit when line editor
-  benchmarks exist (PLAN_07).
+  benchmarks exist (PLAN_13).
 - **§7.1 / §10 OSC terminator.** v1 emits `ST` universally as planned; no
   caller has requested `BEL`.
 - **§10 `Color::Indexed(0..=15)` normalization.** Emits as written.
@@ -37,8 +37,8 @@ Open questions in §10 that were resolved during implementation:
 Carried forward to later plans:
 
 - Capability detection / which sequences are safe to send — PLAN_04.
-- Mouse-event decoding — PLAN_07 (if enabled).
-- Diff SGR encoder evaluation — gated on PLAN_07 line-editor benchmarks.
+- Mouse-event decoding — PLAN_13 (if enabled).
+- Diff SGR encoder evaluation — gated on PLAN_13 line-editor benchmarks.
 
 This document specifies the `fredshell-ansi` crate: its scope, public
 API shape, performance contract, and the small set of structured
@@ -68,7 +68,7 @@ to an encoder-first design. This document fills in the details.
     enabled.
   - Bracketed paste enable/disable convenience.
   - Kitty keyboard protocol push/pop sequences (the negotiation
-    bytes; the _interpretation_ of received keys belongs to PLAN_07).
+    bytes; the _interpretation_ of received keys belongs to PLAN_13).
 
 - **Minimal decoder** for the structured responses a shell must read:
   - DA1 (Primary Device Attributes) response.
@@ -89,7 +89,7 @@ to an encoder-first design. This document fills in the details.
   it needs; capability _detection_ (which sequences are safe to send)
   is owned by PLAN_04.
 - Mouse-event decoding. If the line editor enables mouse modes
-  (PLAN_07 decides), the decoder side lives there, not here.
+  (PLAN_13 decides), the decoder side lives there, not here.
 
 The boundary rule: `fredshell-ansi` knows how to _speak_ terminal; it
 does not know how to _be_ a terminal. PLAN*04 owns the question of
@@ -346,7 +346,7 @@ The decoder is **byte-oriented and incremental**. The line-editor
 input loop reads bytes from the tty, buffers them, and tries to
 decode known response types. Unknown sequences are passed through to
 the line-editor's key decoder unchanged (the key decoder, owned by
-PLAN_07, has its own logic for CSI sequences that represent keys).
+PLAN_13, has its own logic for CSI sequences that represent keys).
 
 The decoder is _not_ a full ANSI state machine. It is a set of
 "does this byte slice match one of these four known shapes?"
@@ -442,7 +442,7 @@ graph) cover:
 - `encoded_len(x) == encode(x).len()` for all `x`.
 
 The crate is exercised end-to-end via the line editor (L4 PTY
-tests, PLAN_07) and indirectly through the prompt (L2 integration
+tests, PLAN_13) and indirectly through the prompt (L2 integration
 tests in `fredshell-prompt`).
 
 ## 9. Migration path

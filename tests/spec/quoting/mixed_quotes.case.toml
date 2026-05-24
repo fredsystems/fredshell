@@ -4,5 +4,5 @@ echo 'single quotes preserve $literal'
 echo "double quotes expand ${HOME:-tilde}"
 echo backslash\\ space\\ joins
 """
-status = "deferred:PLAN_06"
+status = "deferred:PLAN_11"
 tags = ["quoting", "posix-overlap"]

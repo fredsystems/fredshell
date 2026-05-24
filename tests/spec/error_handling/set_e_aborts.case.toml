@@ -4,5 +4,5 @@ set -e
 false
 echo unreached
 """
-status = "deferred:PLAN_06"
+status = "deferred:PLAN_11"
 tags = ["error-handling", "set-e"]

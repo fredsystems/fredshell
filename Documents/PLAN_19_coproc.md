@@ -1,10 +1,10 @@
-# PLAN_16 — Coprocesses (`coproc`)
+# PLAN_19 — Coprocesses (`coproc`)
 
 > Last updated: 2026-05-23 — stub created to give `coproc`
 > a permanent owning document (resolves Q-10-D / Q-06B-2).
 > Phase: post-v1. Status: stub (not drafted; deferred from v1).
-> Consumes (when drafted): PLAN_06 §13 lexer/parser, PLAN_06
-> executor pipeline, PLAN_10 §6 job-control builtins, PLAN_02
+> Consumes (when drafted): PLAN_10 lexer/parser, PLAN_06
+> executor pipeline, PLAN_12 §6 job-control builtins, PLAN_02
 > `ShellState`. Consumed by: nothing in v1.
 
 ## Purpose
@@ -12,7 +12,7 @@
 This document is a placeholder. It exists so that the eventual
 implementation of bash's `coproc` construct has a single,
 unambiguous owning plan — not a question scattered across PLAN_06
-(parser), PLAN_10 (jobs), and PLAN_02 (variables).
+(parser), PLAN_12 (jobs), and PLAN_02 (variables).
 
 `coproc` is **explicitly out of scope for v1.** v1 recognises the
 reserved word and refuses cleanly. This stub records the binding
@@ -59,7 +59,7 @@ warns if a second is started while the first is still running.
   parent-read), forking with the standard FD redirection setup,
   closing the child-side FDs in the parent, and exposing the
   parent-side FDs as an array variable.
-- **PLAN_10 (jobs):** the spawned child is a background job and
+- **PLAN_12 (jobs):** the spawned child is a background job and
   must appear in `jobs`, respond to `kill %N`, count toward
   `wait`, and be reaped by the standard SIGCHLD path. The PID is
   exposed via the `NAME_PID` scalar.
@@ -75,7 +75,7 @@ implementation time.
 
 ## v1 behaviour (refusal)
 
-For v1, PLAN_06 §13.2 (lexer/parser) recognises `coproc` as a
+For v1, PLAN_11 §3 (lexer/parser) recognises `coproc` as a
 reserved word in command position and emits:
 
 ```text
@@ -113,8 +113,8 @@ At that point the drafter:
 - Adds the corresponding subtask grid (numbering TBD; suggest
   `16.0` through `16.N`).
 - Adds spec sheets under `Documents/specs/features/coproc/`
-  per PLAN_08.
-- Coordinates with PLAN_10 to amend §6 (`jobs` / `kill`
+  per PLAN_07.
+- Coordinates with PLAN_12 to amend §6 (`jobs` / `kill`
   interaction) and with PLAN_06 to add the grammar production.
 
 ## Open questions (deferred)
@@ -139,7 +139,7 @@ they do not get lost:
 
 - **PLAN_06** — owns parser refusal in v1, owns full grammar
   - executor when this plan is drafted.
-- **PLAN_10** — owns the job entry, the `NAME_PID` binding,
+- **PLAN_12** — owns the job entry, the `NAME_PID` binding,
   and the reaper path.
 - **PLAN_02** — owns the `COPROC` / `NAME` array binding.
 - **PLAN_15** — milestones doc references this stub under

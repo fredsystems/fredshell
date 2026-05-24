@@ -1,11 +1,11 @@
-# PLAN_07 — Interactive UX and Line Editor
+# PLAN_13 — Interactive UX and Line Editor
 
-> Last updated: 2026-05-22 — scope augmentation: PLAN_07 now
+> Last updated: 2026-05-22 — scope augmentation: PLAN_13 now
 > explicitly owns the `history` and `fc` builtins (new §8.6),
-> the `yield_terminal` primitive consumed by PLAN_10 trap
-> delivery (new §9.5, answers PLAN_10 Q10.5), and the L4 PTY
+> the `yield_terminal` primitive consumed by PLAN_12 trap
+> delivery (new §9.5, answers PLAN_12 Q10.5), and the L4 PTY
 > harness for end-to-end editor tests (new §12.7). Prompt
-> rendering remains delegated to PLAN_11.
+> rendering remains delegated to PLAN_14.
 > Earlier on 2026-05-20 — first draft; §5 rewritten around
 > `Vec<LogicalRow>` of TChar with render-only soft wrap; §9.3
 > expanded with wrap module, RowLayout, VisualCursor; §10 adds
@@ -14,8 +14,8 @@
 > Phase: A. Status: draft.
 > Settles the line-editor question left open in PLAN_02 §5.
 > Consumes: PLAN_03 (encoders), PLAN_04 (terminal session).
-> Consumed by: PLAN_11 (prompt), PLAN_06 (completion + builtin
-> dispatch for `history`/`fc`), PLAN_10 (trap delivery via
+> Consumed by: PLAN_14 (prompt), PLAN_06 (completion + builtin
+> dispatch for `history`/`fc`), PLAN_12 (trap delivery via
 > `yield_terminal`), PLAN_12 (config).
 
 This document specifies the line editor and surrounding interactive
@@ -24,7 +24,7 @@ hints, syntax highlighting, completion glue, and the redraw loop.
 It commits fredshell to building its own line editor rather than
 adapting `reedline`. §10 records why.
 
-PLAN_07 is the largest subsystem in fredshell by line count and by
+PLAN_13 is the largest subsystem in fredshell by line count and by
 calendar time. The document is honest about that. The implementation
 phases (§11) are designed so that the rest of the shell — parser,
 exec, builtins, prompt — can be built and tested in parallel with
@@ -75,7 +75,7 @@ the editor, against a deliberate scaffold (§11.1).
   documented in §7.
 - **Redraw loop.** Diff-based; emits only the bytes needed via
   PLAN_03 encoders; respects `Capabilities::synchronized_output`.
-- **`history` and `fc` builtins.** PLAN_07 owns the in-process
+- **`history` and `fc` builtins.** PLAN_13 owns the in-process
   implementations of the `history` and `fc` builtins. They are
   thin wrappers over the same history store the interactive
   editor uses; PLAN_06 dispatches to them by name. See §8.6.
@@ -83,7 +83,7 @@ the editor, against a deliberate scaffold (§11.1).
   that hands the controlling terminal to a foreground child for
   the duration of one read-line/read-line-equivalent and reclaims
   it afterwards, without tearing down the editor state. Consumed
-  by PLAN_10 trap delivery (Q10.5) and by external-editor
+  by PLAN_12 trap delivery (Q10.5) and by external-editor
   integration. See §9.5.
 
 ### Out of scope (v1)
@@ -325,7 +325,7 @@ Specifically:
 
 It does **not** store:
 
-- The prompt itself. PLAN_11 produces it; the editor knows only
+- The prompt itself. PLAN_14 produces it; the editor knows only
   how many columns it occupies on the starting visual row.
 - Previously executed commands or their output. Those belong to
   the host terminal emulator (kitty, alacritty, foot, …), which
@@ -779,10 +779,10 @@ This matches bash's `histverify` set option.
 
 ### 8.6. The `history` and `fc` builtins
 
-PLAN_07 owns the history store. The two bash builtins that read
+PLAN_13 owns the history store. The two bash builtins that read
 or mutate it — `history` and `fc` — therefore live in
 `fredshell-core::builtins::history` and `::fc` but are
-implemented by calling into the PLAN_07 history API rather than
+implemented by calling into the PLAN_13 history API rather than
 duplicating storage. PLAN_06 (builtin dispatch) is responsible
 only for routing the builtin name to the entry point; the
 semantics are owned here.
@@ -822,7 +822,7 @@ distributions), bash's undocumented buffer-flushing modes.
   command) optionally with a single `pat=rep` substitution. This
   is the "quick re-run" mode.
 
-Both builtins refuse cleanly (PLAN_05 refusal contract, PLAN_08
+Both builtins refuse cleanly (PLAN_05 refusal contract, PLAN_07
 spec sheet) when invoked from a non-interactive context with no
 `HISTFILE`. They are not Tier-2 — they are first-class builtins.
 
@@ -840,7 +840,7 @@ pub trait HistoryStore {
 }
 ```
 
-PLAN_07 provides the concrete implementation; the builtin code
+PLAN_13 provides the concrete implementation; the builtin code
 holds a `&mut dyn HistoryStore`. In the cooked-mode scaffold
 (§11.1) the store is a stub that records entries to an in-memory
 `Vec` and never touches disk.
@@ -894,7 +894,7 @@ checks whether the cached hint still extends the buffer.
 ### 9.3. Frame model, wrap, and diff
 
 The frame is a 2D grid built fresh per redraw from the buffer
-(§5), the prompt (PLAN_11), the hint (§9.2), and the completion
+(§5), the prompt (PLAN_14), the hint (§9.2), and the completion
 menu (§7). It is never persisted between redraws as the source
 of truth — the buffer is.
 
@@ -1040,7 +1040,7 @@ visual-line-based motion.
 
 Each redraw:
 
-1. Build the prompt's `FrameRow`s (PLAN_11).
+1. Build the prompt's `FrameRow`s (PLAN_14).
 2. For each logical row of the buffer, call `wrap_row` against
    the current `WrapContext`. Materialize each `VisualSlice` as
    a `FrameRow`, applying highlighter spans, selection style,
@@ -1082,7 +1082,7 @@ take the same path scoped to row 0's layout.
 
 ### 9.5. Terminal yield primitive
 
-PLAN_10 (traps and jobs) needs a way to hand the controlling
+PLAN_12 (traps and jobs) needs a way to hand the controlling
 terminal to a foreground external process — for example, when
 the user runs `vim` from the prompt, or when a `trap '...' DEBUG`
 handler shells out — without the editor's raw-mode state, kitty
@@ -1115,7 +1115,7 @@ impl Editor {
 
 The name `yield_terminal` is deliberately not
 `yield_for_one_line`; the primitive is more general than the
-PLAN_10 use case. PLAN_10 calls it with a closure that spawns a
+PLAN_12 use case. PLAN_12 calls it with a closure that spawns a
 single child and waits; external-editor integration (§1) calls
 it with a closure that invokes `$EDITOR`; future job-control
 work will call it with a closure that does `tcsetpgrp` /
@@ -1147,8 +1147,8 @@ Failure modes:
   `yield_terminal` returns `EditorError::TerminalLost` and the
   caller is expected to exit the shell.
 
-This primitive is referenced by PLAN_10 §11 subtask 10.6
-(trap handler execution) and answers PLAN_10 open question
+This primitive is referenced by PLAN_12 §11 subtask 10.6
+(trap handler execution) and answers PLAN_12 open question
 Q10.5.
 
 ## 10. Why not reedline
@@ -1323,7 +1323,7 @@ vi mode, hints, highlighting, and fzf are not yet present.
 - Vi normal/insert/visual + operators + text objects + counts +
   registers + `.` repeat.
 - Parser-driven highlighter.
-- Continuation prompts (coordinated with PLAN_11).
+- Continuation prompts (coordinated with PLAN_14).
 
 At the end of Phase 2, the editor is competitive with bash + vi
 mode.
@@ -1543,7 +1543,7 @@ behaviours can only be tested through a real PTY: the
 with raw-mode toggling, kitty keyboard-protocol level
 negotiation against a terminal that actually replies, and the
 resume-after-yield invariants. These tests are PLAN_05's **L4**
-tier (PTY-driven end-to-end), and PLAN_07 owns the harness.
+tier (PTY-driven end-to-end), and PLAN_13 owns the harness.
 
 The harness lives in `crates/fredshell-core/tests/pty/` and is
 gated behind `#[cfg(target_family = "unix")]`. It is built on:
@@ -1553,7 +1553,7 @@ gated behind `#[cfg(target_family = "unix")]`. It is built on:
   `fredshell-core::testing::pty_harness` (only compiled under
   `cfg(test)` or with the `test-support` feature).
 - A reader thread that drains the master fd into a
-  `Vec<u8>` byte log, normalised by the same filter PLAN_09 uses
+  `Vec<u8>` byte log, normalised by the same filter PLAN_08 uses
   for the differential oracle (timestamps stripped, mode bits
   pinned to 022).
 
@@ -1596,7 +1596,7 @@ ESC [ 201 ~`; assert the buffer contains exactly `<data>`
 5. **Kitty L1–L4 negotiation.** Run against a faked terminal
    reply chain; assert the editor enables exactly the level
    reported as supported.
-6. **Trap delivery during read-line.** PLAN_10 §11 subtask
+6. **Trap delivery during read-line.** PLAN_12 §11 subtask
    10.12 owns this case, but it executes against this harness.
 
 Performance contract: the harness must spawn and reach the
@@ -1606,7 +1606,7 @@ or moved to nightly.
 
 The harness is **not** an integration test for the parser or
 the executor — those run against the spec runner (PLAN_05,
-PLAN_08). The harness exercises only the editor and PLAN_04
+PLAN_07). The harness exercises only the editor and PLAN_04
 terminal session.
 
 ## 13. Open questions
@@ -1645,22 +1645,22 @@ terminal session.
   `output()`, the cancellation token, the window-size feed, and
   the raw-mode transition. The editor is the largest consumer
   of PLAN_04's API.
-- **PLAN_05** owns the test infrastructure; PLAN_07 supplies the
+- **PLAN_05** owns the test infrastructure; PLAN_13 supplies the
   unit, snapshot, property, and benchmark cases.
 - **PLAN_06** (parser) provides incremental highlighting input
   and the "is this line complete?" oracle for multiline Enter.
   PLAN_06 also dispatches the `history` and `fc` builtins to
   their entry points; the semantics of those builtins live in
-  PLAN_07 §8.6.
-- **PLAN_10** (traps and jobs) calls `yield_terminal` (§9.5)
+  PLAN_13 §8.6.
+- **PLAN_12** (traps and jobs) calls `yield_terminal` (§9.5)
   when a foreground child claims the controlling terminal and
-  when trap handlers shell out. PLAN_10 §11 subtask 10.6
-  consumes this primitive; PLAN_07 §12.7 owns the PTY harness
-  that exercises trap delivery during read-line (PLAN_10
+  when trap handlers shell out. PLAN_12 §11 subtask 10.6
+  consumes this primitive; PLAN_13 §12.7 owns the PTY harness
+  that exercises trap delivery during read-line (PLAN_12
   subtask 10.12).
-- **PLAN_11** (prompt) provides the leading frame content; the
+- **PLAN_14** (prompt) provides the leading frame content; the
   editor composes prompt + buffer + hint + menu into a single
-  frame. Prompt rendering is **not** in PLAN_07; the editor
+  frame. Prompt rendering is **not** in PLAN_13; the editor
   knows only the prompt's column-zero offset on row 0 (and the
   continuation-prompt width on subsequent rows).
 - **PLAN_06** (completion) implements `CompletionProvider`; the

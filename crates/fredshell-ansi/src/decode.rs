@@ -26,7 +26,7 @@
 //! The decoder is **not** a general-purpose terminal state machine.
 //! It does not handle interleaved printable text, partial recovery,
 //! or async streaming. Per `PLAN_03` §5.1, those concerns belong to
-//! the caller (see `PLAN_07`).
+//! the caller (see `PLAN_13`).
 
 use crate::{Decode, DecodeError, kitty::KittyKeyboardFlags};
 

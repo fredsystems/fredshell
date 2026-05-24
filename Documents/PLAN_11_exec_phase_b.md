@@ -1,27 +1,26 @@
-# PLAN_06b — Execution pipeline, Phase B (real semantics)
+# PLAN_11 — Execution pipeline, Phase B (real semantics)
 
-> Last updated: 2026-05-23 — Extracted from PLAN_06 §13 to its own
-> document. The split reflects work-order reality: Phase A (§1–§12
-> of PLAN_06) is implemented; Phase B is corpus-dependent and gated
-> on PLAN_09 F1 and on PLAN_08 spec sheets. Tracking it in its own
+> Last updated: 2026-05-23 — Document established by the work-order
+> renumber. Phase B was previously drafted in PLAN_06 §13 and then
+> extracted to a temporary `PLAN_06b_exec_phase_b.md`; this commit
+> finalises that extraction by landing it at its work-order slot
+> as PLAN_11. The split reflects work-order reality: Phase A (PLAN_06
+> §1–§12) is implemented; Phase B is corpus-dependent and gated on
+> PLAN_08 F1 and on PLAN_07 spec sheets. Tracking Phase B in its own
 > document lets PLAN_06 represent the implemented Phase A scaffold
-> without dragging the Phase B drafting weight along. The follow-up
-> renumber commit (already planned) will move this file to a final
-> PLAN_NN slot once the surrounding numbering settles, and will add
-> parser/CST and logging plans that PLAN_06b also consumes.
+> without dragging the Phase B drafting weight along.
 >
-> Status: drafted, gated on 06b.0 (PLAN_09 F1 green on `main`) per
+> Status: drafted, gated on 06b.0 (PLAN_08 F1 green on `main`) per
 > ADR 0003 + ADR 0004. Subtask numbering retained as `06b.N` for
 > continuity with the prior in-PLAN_06 §13 grid and with the
-> existing task-06b/ branch namespace.
+> existing `task-06b/` branch namespace.
 >
-> Content history: previously lived as §13 of PLAN_06_exec.md.
-> All cross-references that read "PLAN_06 §13.x" should be read as
-> "PLAN_06b §x+1" going forward. Sub-references "§13.N" inside the
-> extracted text have been renumbered to "§N+1" (e.g. §13.4 → §5);
-> external references to the document have not been mass-rewritten
-> in this commit and will be retargeted in the renumber commit
-> that follows.
+> Content history: previously lived as §13 of PLAN_06_exec.md, then
+> briefly as PLAN_06b before the work-order renumber. All
+> cross-references that read "PLAN_06 §13.x" have been retargeted to
+> "PLAN_11 §x+1" in the renumber commit; sub-references "§13.N"
+> inside this document have been renumbered to "§N+1"
+> (e.g. §13.4 → §5).
 
 This document owns Phase B of the parse-and-execute pipeline:
 replacing PLAN_06's Phase A stub executor with a real lexer,
@@ -34,21 +33,21 @@ the stable public surface this work lands behind.
 
 Phase B owns the migration from the v0 stub to a native execution
 pipeline. It cannot start before PLAN_05 produces a baseline corpus
-pass-rate (ADR 0003), before PLAN_08 produces the per-builtin and
+pass-rate (ADR 0003), before PLAN_07 produces the per-builtin and
 per-feature spec sheets that drive prioritisation, and before
-PLAN_09's F1 differential is green (06.0 gate, below).
+PLAN_08's F1 differential is green (06.0 gate, below).
 
 ## 2. Gating dependencies
 
-- **06.0 (gate)** — PLAN_09 F1 differential fuzzer must be green
-  against pinned bash 5.3p9 on `main` (PLAN_09 §3.1). No Phase B
+- **06.0 (gate)** — PLAN_08 F1 differential fuzzer must be green
+  against pinned bash 5.3p9 on `main` (PLAN_08 §3.1). No Phase B
   implementation subtask may land while F1 is red. F1 is the
   single signal that says the executor is stable enough that
   divergences observed during Phase B implementation are about
   the change under review, not about pre-existing drift.
 - **Per-builtin / per-feature** — each in-scope Tier-1 builtin and
-  each grammar feature requires a `support`-classed PLAN_08 sheet
-  before its implementation subtask begins. PLAN_08 sheets are
+  each grammar feature requires a `support`-classed PLAN_07 sheet
+  before its implementation subtask begins. PLAN_07 sheets are
   the prose acceptance criteria; the corpus is the executable
   acceptance criteria.
 - **ADR 0004 sunset** — Phase B retires the `/bin/sh -c` fallback
@@ -95,7 +94,7 @@ node families:
 
 Q06B.1 was resolved on 2026-05-23: write our own
 recursive-descent parser, for total control over diagnostic
-quality and incremental parsing (PLAN_07's highlighter needs
+quality and incremental parsing (PLAN_13's highlighter needs
 the parser to tolerate a partial line). ADR 0005 (subtask
 06b.1) ratifies this resolution before subtask 13B.2 starts.
 
@@ -132,12 +131,12 @@ pipeline in execution order:
    pipeline runs in a fresh process group; exit status is the
    last command's by default, all-status under `set -o
 pipefail`.
-6. **Job-table side-effects.** PLAN_10 owns the job table; the
+6. **Job-table side-effects.** PLAN_12 owns the job table; the
    executor's contract is that every external command lands in
    that table with a known state by the time `dispatch` returns.
 
 The expansion code is the single largest source of bash-quirk
-risk. Every expansion pass has its own PLAN_08 sheet (the
+risk. Every expansion pass has its own PLAN_07 sheet (the
 `expansion/*` family). Implementation does not begin on a pass
 until its sheet is `support`-classed and at least one passing
 spec case exists.
@@ -159,12 +158,12 @@ sandbox + shell state." The new `ShellState` struct (private to
 | `last_status` | `ExitStatus`                       | PLAN_06 | `$?`.                                                    |
 | `last_pid`    | `Option<Pid>`                      | PLAN_06 | `$!`.                                                    |
 | `last_arg`    | `Option<String>`                   | PLAN_06 | `$_`.                                                    |
-| `traps`       | `TrapTable`                        | PLAN_10 | Slot; PLAN_06 reserves the field but does not populate.  |
-| `jobs`        | `JobTable`                         | PLAN_10 | Slot; PLAN_06 reserves the field but does not populate.  |
-| `dirs_stack`  | `Vec<PathBuf>`                     | PLAN_10 | `pushd`/`popd`/`dirs`; slot only.                        |
-| `umask`       | `mode_t`                           | PLAN_10 | Slot only.                                               |
-| `cmd_hash`    | `HashMap<String, PathBuf>`         | PLAN_10 | `hash` builtin cache; slot only.                         |
-| `history`     | `&mut dyn HistoryStore` (borrowed) | PLAN_07 | Borrowed from the editor; not owned by `ShellState`.     |
+| `traps`       | `TrapTable`                        | PLAN_12 | Slot; PLAN_06 reserves the field but does not populate.  |
+| `jobs`        | `JobTable`                         | PLAN_12 | Slot; PLAN_06 reserves the field but does not populate.  |
+| `dirs_stack`  | `Vec<PathBuf>`                     | PLAN_12 | `pushd`/`popd`/`dirs`; slot only.                        |
+| `umask`       | `mode_t`                           | PLAN_12 | Slot only.                                               |
+| `cmd_hash`    | `HashMap<String, PathBuf>`         | PLAN_12 | `hash` builtin cache; slot only.                         |
+| `history`     | `&mut dyn HistoryStore` (borrowed) | PLAN_13 | Borrowed from the editor; not owned by `ShellState`.     |
 
 `ShellState` is owned by `ExecEnv` (one field). `ExecEnv` retains
 its existing `cwd` / `env` / sandbox flags; those become views
@@ -191,32 +190,32 @@ existing), `command`, `continue`, `declare`, `echo`, `enable`,
 `eval`, `exec`, `exit` (already implemented), `export`,
 `false`, `let`, `local`, `pwd`, `readonly`, `return`, `set`,
 `shift`, `shopt`, `source`, `test`, `true`, `type`\* (split with
-PLAN_10), `typeset`, `unalias`, `unset`.
+PLAN_12), `typeset`, `unalias`, `unset`.
 
 (\*`type` is dual-owned: command-kind resolution table is
-PLAN_06; the `-a` exhaustive listing uses PLAN_10's `hash`
+PLAN_06; the `-a` exhaustive listing uses PLAN_12's `hash`
 cache and PATH search machinery.)
 
-Each builtin lands as its own subtask once its PLAN_08 sheet is
+Each builtin lands as its own subtask once its PLAN_07 sheet is
 `support`-classed. The largest by surface area are `test`,
 `declare`, `set`, `shopt`, and `exec`; the smallest (`:`,
 `true`, `false`) ship together.
 
-**PLAN_10 — Tier-1 builtins (19).** Listed for cross-reference
-only; implementation tracked in PLAN_10:
+**PLAN_12 — Tier-1 builtins (19).** Listed for cross-reference
+only; implementation tracked in PLAN_12:
 
 `bg`, `caller`, `dirs`, `disown`, `fg`, `getopts`, `hash`,
 `help`, `jobs`, `kill`, `logout`, `mapfile`, `popd`, `printf`,
 `pushd`, `read`, `readarray`, `suspend`, `times`, `trap`,
 `ulimit`, `umask`, `wait`.
 
-**PLAN_07 — Tier-1 builtins (2).** `fc`, `history`. Listed for
-cross-reference; implementation tracked in PLAN_07 §8.6.
+**PLAN_13 — Tier-1 builtins (2).** `fc`, `history`. Listed for
+cross-reference; implementation tracked in PLAN_13 §8.6.
 
 **Tier-2.** The Tier-2 registry and dispatcher wiring is a
 Phase B deliverable (§7 subtask 13B.5). Individual Tier-2
 implementations (e.g., `ls`, `cat`, `du`) are inventoried by
-PLAN_08 sheets and tracked as sub-subtasks under 13B.5; they
+PLAN_07 sheets and tracked as sub-subtasks under 13B.5; they
 are not enumerated here.
 
 ## 7. ADR 0004 fallback removal
@@ -242,11 +241,11 @@ sunset stage 2 is unlocked) when all of the following are
 true:
 
 - Every PLAN_06-owned Tier-1 builtin in §6 has a
-  `support`-classed PLAN_08 sheet and at least one passing
+  `support`-classed PLAN_07 sheet and at least one passing
   corpus case.
-- Every expansion pass (§4) has a `support`-classed PLAN_08
+- Every expansion pass (§4) has a `support`-classed PLAN_07
   sheet and ≥10 passing corpus cases.
-- PLAN_09 F1 (every PR), F2 (nightly), and F3 (weekly)
+- PLAN_08 F1 (every PR), F2 (nightly), and F3 (weekly)
   differential tiers have been green on `main` for 14
   consecutive days.
 - Real-world script corpus pass rate ≥ 95% (PLAN_05 §6
@@ -263,7 +262,7 @@ Subtask numbering: `06b.N` (Phase B). Format matches PLAN_06 §10 / §11.
 
 | Subtask | Surface                                          | Gate                  |
 | ------- | ------------------------------------------------ | --------------------- |
-| 06b.0   | Phase B gate: PLAN_09 F1 green on `main`         | PLAN_09 09.7 complete |
+| 06b.0   | Phase B gate: PLAN_08 F1 green on `main`         | PLAN_08 09.7 complete |
 | 06b.1   | ADR 0005: parser implementation choice           | 06b.0                 |
 | 06b.2   | Lexer (`parser/lex/`) + tests                    | 06b.1                 |
 | 06b.3   | Parser (`parser/grammar/`) + AST + tests         | 06b.2                 |
@@ -304,7 +303,7 @@ independent and can run in parallel after their gates clear;
 the order above reflects priority by frequency of use in the
 real-world corpus, not dependency.
 
-PLAN_10 subtasks land in parallel with PLAN_06 Phase B; the
+PLAN_12 subtasks land in parallel with PLAN_06 Phase B; the
 two plans share the §5 `ShellState` slots but otherwise
 operate independently.
 
@@ -314,9 +313,9 @@ operate independently.
   fork. **Resolved (2026-05-23):** in-house recursive-descent.
   Rationale captured in ADR 0005 (subtask 06b.1) and supported
   by the prose at §3: diagnostic quality, incremental
-  parsing for the PLAN_07 highlighter (partial-line
+  parsing for the PLAN_13 highlighter (partial-line
   tolerance), lossless CST for the future formatter, and
-  parse-stage / alias gating (per PLAN_09 §11 Q09.3) all
+  parse-stage / alias gating (per PLAN_08 §11 Q09.3) all
   require parser internals we are unwilling to outsource.
   ADR 0005 authoring remains subtask 06b.1; it ratifies this
   resolution rather than re-litigating it.
@@ -324,14 +323,14 @@ operate independently.
   in v1; defer real implementation to v1.1. **Resolved
   (2026-05-23):** v1 emits `ParseError::Unsupported { feature:
 "coproc" }` per `PLAN_16_coproc.md`; full implementation is
-  owned by PLAN_16 when picked up post-v1. No Phase B subtask.
+  owned by PLAN_19 when picked up post-v1. No Phase B subtask.
 - **Q06B.3** — Here-doc temp-file threshold. **Resolved
   (2026-05-23):** bodies ≤ 64 KiB are delivered via pipe;
   bodies > 64 KiB are spilled to a tempfile under `$TMPDIR`
   with `unlink`-immediately-after-open semantics so cleanup
   survives signals. The threshold is a named const
   (`HEREDOC_PIPE_MAX = 64 * 1024`) in the executor module, not
-  configurable at runtime. PLAN_08 here-doc spec sheets pin
+  configurable at runtime. PLAN_07 here-doc spec sheets pin
   the threshold and include at least one case at body size
   `HEREDOC_PIPE_MAX - 1` and one at `HEREDOC_PIPE_MAX + 1` so
   the boundary is regression-tested. FD-table introspection
@@ -341,7 +340,7 @@ operate independently.
   always uses a tempfile.
 - **Q06B.4** — `$RANDOM` and `$SECONDS` determinism in the
   spec harness. **Resolved (2026-05-23):** the harness pins
-  both per case. Each case's `[harness]` block (PLAN_08 sheet
+  both per case. Each case's `[harness]` block (PLAN_07 sheet
   schema) accepts optional `random_seed: u32` and
   `seconds_offset: u64` fields. fredshell consumes them from a
   harness-only env channel (`FREDSHELL_HARNESS_RANDOM_SEED`,
@@ -372,7 +371,7 @@ operate independently.
   depend on translations fail loudly rather than silently
   losing them. Full `gettext`-style support is post-v1 work;
   if picked up, it gets its own PLAN_XX owning document.
-  PLAN_08 has a refusal-corpus case under
+  PLAN_07 has a refusal-corpus case under
   `tests/spec/refusals/` (`locale_translation.case.toml`)
   asserting the refusal diagnostic text.
 
@@ -380,18 +379,18 @@ operate independently.
 
 - **PLAN_05** — corpus and harness. Phase B is measured by
   corpus pass-rate; the §7 exit gate references PLAN_05 §6.
-- **PLAN_08** — spec sheets. Each Phase B implementation
+- **PLAN_07** — spec sheets. Each Phase B implementation
   subtask consumes a `support`-classed sheet; no sheet, no
   implementation.
-- **PLAN_09** — fuzzer + differential. 06b.0 gates the entire
+- **PLAN_08** — fuzzer + differential. 06b.0 gates the entire
   phase; F2/F3 thresholds gate ADR 0004 sunset stage 2.
-- **PLAN_07** — line editor. Phase B exposes the `history`
+- **PLAN_13** — line editor. Phase B exposes the `history`
   store via a borrowed `HistoryStore` trait object on
   `ShellState`; the `fc` and `history` builtins are dispatched
-  by PLAN_06 to entry points whose semantics live in PLAN_07
+  by PLAN_06 to entry points whose semantics live in PLAN_13
   §8.6.
-- **PLAN_10** — traps and jobs. Phase B reserves the §5
+- **PLAN_12** — traps and jobs. Phase B reserves the §5
   slots (`traps`, `jobs`, `dirs_stack`, `umask`, `cmd_hash`)
-  but does not populate them; PLAN_10 owns population.
+  but does not populate them; PLAN_12 owns population.
 - **PLAN_15** — milestones. The Phase B exit gate corresponds
   to the v1.0 milestone gate.

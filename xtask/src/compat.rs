@@ -820,8 +820,8 @@ mod tests {
             StatusFilter::Wontfix
         );
         assert_eq!(
-            StatusFilter::parse("deferred:PLAN_06").unwrap(),
-            StatusFilter::Deferred("PLAN_06".to_owned())
+            StatusFilter::parse("deferred:PLAN_11").unwrap(),
+            StatusFilter::Deferred("PLAN_11".to_owned())
         );
     }
 
@@ -833,8 +833,8 @@ mod tests {
 
     #[test]
     fn status_filter_matches_case_status() {
-        let f = StatusFilter::Deferred("PLAN_06".to_owned());
-        assert!(f.matches(&CaseStatus::Deferred("PLAN_06".to_owned())));
+        let f = StatusFilter::Deferred("PLAN_11".to_owned());
+        assert!(f.matches(&CaseStatus::Deferred("PLAN_11".to_owned())));
         assert!(!f.matches(&CaseStatus::Deferred("PLAN_10".to_owned())));
         assert!(!f.matches(&CaseStatus::Pass));
 
@@ -950,7 +950,7 @@ mod tests {
     #[test]
     fn build_json_records_deferred_plan_in_verdict_and_tally() {
         let mut deferred = BTreeMap::new();
-        deferred.insert("PLAN_06".to_owned(), 2);
+        deferred.insert("PLAN_11".to_owned(), 2);
         let r = Report {
             corpus_root: PathBuf::from("tests/spec"),
             tally: TallySnapshot {
@@ -969,18 +969,18 @@ mod tests {
                 relative_path: "x/y.case.toml".to_owned(),
                 category: "x".to_owned(),
                 tier: 1,
-                status: CaseStatus::Deferred("PLAN_06".to_owned()),
+                status: CaseStatus::Deferred("PLAN_11".to_owned()),
                 outcome: CaseOutcome::Pass,
                 verdict: CaseVerdict::DeferredHonored {
-                    plan: "PLAN_06".to_owned(),
+                    plan: "PLAN_11".to_owned(),
                 },
             }],
         };
         let json = build_json(&r);
         let s = serde_json::to_string(&json).unwrap();
-        assert!(s.contains("\"deferred_honored\":{\"PLAN_06\":2}"));
+        assert!(s.contains("\"deferred_honored\":{\"PLAN_11\":2}"));
         assert!(s.contains("\"kind\":\"deferred_honored\""));
-        assert!(s.contains("\"plan\":\"PLAN_06\""));
+        assert!(s.contains("\"plan\":\"PLAN_11\""));
     }
 
     // -----------------------------------------------------------------
@@ -1066,15 +1066,15 @@ mod tests {
     fn render_compat_md_groups_deferred_cases_by_plan() {
         let r = report_for(
             vec![
-                deferred_case("p/late.case.toml", "p", "PLAN_10"),
-                deferred_case("p/early.case.toml", "p", "PLAN_06"),
+                deferred_case("p/late.case.toml", "p", "PLAN_12"),
+                deferred_case("p/early.case.toml", "p", "PLAN_11"),
             ],
             0,
             2,
         );
         let md = render_compat_md(&r);
-        let exec_plan_pos = md.find("### PLAN_06").expect("PLAN_06 header present");
-        let jobs_plan_pos = md.find("### PLAN_10").expect("PLAN_10 header present");
+        let exec_plan_pos = md.find("### PLAN_11").expect("PLAN_11 header present");
+        let jobs_plan_pos = md.find("### PLAN_12").expect("PLAN_12 header present");
         assert!(
             exec_plan_pos < jobs_plan_pos,
             "plans must be sorted lexically"
@@ -1128,7 +1128,7 @@ mod tests {
         let r = report_for(
             vec![
                 pass_case("a/x.case.toml", "a"),
-                deferred_case("a/y.case.toml", "a", "PLAN_06"),
+                deferred_case("a/y.case.toml", "a", "PLAN_11"),
             ],
             1,
             2,

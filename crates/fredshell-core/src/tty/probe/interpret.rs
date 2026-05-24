@@ -54,7 +54,7 @@ pub fn apply_da1(caps: &mut Capabilities, response: &Da1Response) {
 /// flags — is sufficient evidence that the terminal speaks the
 /// progressive-enhancement protocol. The flags themselves describe
 /// the current top-of-stack state, which fredshell does not yet
-/// consume; see `PLAN_07` for the keyboard mode push/pop dance.
+/// consume; see `PLAN_13` for the keyboard mode push/pop dance.
 pub const fn apply_kitty_keyboard(caps: &mut Capabilities, _response: &KittyKeyboardQueryResponse) {
     caps.kitty_keyboard = true;
 }
