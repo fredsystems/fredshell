@@ -1,6 +1,12 @@
 # PLAN_11 — Execution pipeline, Phase B (real semantics)
 
-> Last updated: 2026-05-23 — Document established by the work-order
+> Last updated: 2026-05-24 — ShellState §5 owner column corrected
+> from PLAN_06 to PLAN_11 for Phase-B-owned fields; §6 builtin
+> inventory label updated; cross-ref to PLAN_19_coproc.md fixed;
+> PLAN_08 subtask cross-ref renumbered (09.7 → 08.7); Phase B
+> parallelism prose updated. Substance unchanged.
+>
+> Previously (2026-05-23): Document established by the work-order
 > renumber. Phase B was previously drafted in PLAN_06 §13 and then
 > extracted to a temporary `PLAN_06b_exec_phase_b.md`; this commit
 > finalises that extraction by landing it at its work-order slot
@@ -149,17 +155,17 @@ sandbox + shell state." The new `ShellState` struct (private to
 
 | Field         | Type                               | Owner   | Purpose                                                  |
 | ------------- | ---------------------------------- | ------- | -------------------------------------------------------- |
-| `variables`   | `Scope` tree                       | PLAN_06 | Shell + environment variables; supports `local` scoping. |
-| `functions`   | `BTreeMap<String, FunctionDef>`    | PLAN_06 | User-defined functions; AST captured at definition.      |
-| `aliases`     | `BTreeMap<String, String>`         | PLAN_06 | Pre-parse expansion; only at line-start position.        |
-| `options`     | `SetOpts`                          | PLAN_06 | `set -o` long-form and `-e/-u/-x/-o pipefail/...` flags. |
-| `shopts`      | `ShoptOpts`                        | PLAN_06 | `shopt` flag set (bash-only options).                    |
-| `pos_args`    | `Vec<String>`                      | PLAN_06 | `$0`/`$1`.../`$@`.                                       |
-| `last_status` | `ExitStatus`                       | PLAN_06 | `$?`.                                                    |
-| `last_pid`    | `Option<Pid>`                      | PLAN_06 | `$!`.                                                    |
-| `last_arg`    | `Option<String>`                   | PLAN_06 | `$_`.                                                    |
-| `traps`       | `TrapTable`                        | PLAN_12 | Slot; PLAN_06 reserves the field but does not populate.  |
-| `jobs`        | `JobTable`                         | PLAN_12 | Slot; PLAN_06 reserves the field but does not populate.  |
+| `variables`   | `Scope` tree                       | PLAN_11 | Shell + environment variables; supports `local` scoping. |
+| `functions`   | `BTreeMap<String, FunctionDef>`    | PLAN_11 | User-defined functions; AST captured at definition.      |
+| `aliases`     | `BTreeMap<String, String>`         | PLAN_11 | Pre-parse expansion; only at line-start position.        |
+| `options`     | `SetOpts`                          | PLAN_11 | `set -o` long-form and `-e/-u/-x/-o pipefail/...` flags. |
+| `shopts`      | `ShoptOpts`                        | PLAN_11 | `shopt` flag set (bash-only options).                    |
+| `pos_args`    | `Vec<String>`                      | PLAN_11 | `$0`/`$1`.../`$@`.                                       |
+| `last_status` | `ExitStatus`                       | PLAN_11 | `$?`.                                                    |
+| `last_pid`    | `Option<Pid>`                      | PLAN_11 | `$!`.                                                    |
+| `last_arg`    | `Option<String>`                   | PLAN_11 | `$_`.                                                    |
+| `traps`       | `TrapTable`                        | PLAN_12 | Slot; PLAN_11 reserves the field but does not populate.  |
+| `jobs`        | `JobTable`                         | PLAN_12 | Slot; PLAN_11 reserves the field but does not populate.  |
 | `dirs_stack`  | `Vec<PathBuf>`                     | PLAN_12 | `pushd`/`popd`/`dirs`; slot only.                        |
 | `umask`       | `mode_t`                           | PLAN_12 | Slot only.                                               |
 | `cmd_hash`    | `HashMap<String, PathBuf>`         | PLAN_12 | `hash` builtin cache; slot only.                         |
@@ -178,12 +184,14 @@ from top to bottom.
 
 ## 6. Builtin inventory by owner
 
-PLAN_05 §11.1 is the canonical disposition table; PLAN_06 owns
-exactly the rows marked PLAN_06 there. Reproduced here as a
-checklist (no semantic content; if it disagrees with PLAN_05
-§11.1, PLAN_05 wins):
+PLAN_05 §11.1 is the canonical disposition table; PLAN_11 owns
+exactly the rows marked PLAN_06 there (Phase B implements the
+builtins assigned to the executor in PLAN_05; the `PLAN_06`
+label in PLAN_05 §11.1 predates the Phase A/B split). Reproduced
+here as a checklist (no semantic content; if it disagrees with
+PLAN_05 §11.1, PLAN_05 wins):
 
-**PLAN_06 — Tier-1 builtins (38).**
+**PLAN_11 — Tier-1 builtins (38).**
 
 `:`, `.`, `[`, `alias`, `break`, `builtin`, `cd` (extend
 existing), `command`, `continue`, `declare`, `echo`, `enable`,
@@ -193,7 +201,7 @@ existing), `command`, `continue`, `declare`, `echo`, `enable`,
 PLAN_12), `typeset`, `unalias`, `unset`.
 
 (\*`type` is dual-owned: command-kind resolution table is
-PLAN_06; the `-a` exhaustive listing uses PLAN_12's `hash`
+PLAN_11; the `-a` exhaustive listing uses PLAN_12's `hash`
 cache and PATH search machinery.)
 
 Each builtin lands as its own subtask once its PLAN_07 sheet is
@@ -262,7 +270,7 @@ Subtask numbering: `06b.N` (Phase B). Format matches PLAN_06 §10 / §11.
 
 | Subtask | Surface                                          | Gate                  |
 | ------- | ------------------------------------------------ | --------------------- |
-| 06b.0   | Phase B gate: PLAN_08 F1 green on `main`         | PLAN_08 09.7 complete |
+| 06b.0   | Phase B gate: PLAN_08 F1 green on `main`         | PLAN_08 08.7 complete |
 | 06b.1   | ADR 0005: parser implementation choice           | 06b.0                 |
 | 06b.2   | Lexer (`parser/lex/`) + tests                    | 06b.1                 |
 | 06b.3   | Parser (`parser/grammar/`) + AST + tests         | 06b.2                 |
@@ -303,7 +311,7 @@ independent and can run in parallel after their gates clear;
 the order above reflects priority by frequency of use in the
 real-world corpus, not dependency.
 
-PLAN_12 subtasks land in parallel with PLAN_06 Phase B; the
+PLAN_12 subtasks land in parallel with PLAN_11 Phase B; the
 two plans share the §5 `ShellState` slots but otherwise
 operate independently.
 
@@ -322,7 +330,7 @@ operate independently.
 - **Q06B.2** — `coproc` support. Default: recognise and refuse
   in v1; defer real implementation to v1.1. **Resolved
   (2026-05-23):** v1 emits `ParseError::Unsupported { feature:
-"coproc" }` per `PLAN_16_coproc.md`; full implementation is
+"coproc" }` per `PLAN_19_coproc.md`; full implementation is
   owned by PLAN_19 when picked up post-v1. No Phase B subtask.
 - **Q06B.3** — Here-doc temp-file threshold. **Resolved
   (2026-05-23):** bodies ≤ 64 KiB are delivered via pipe;
@@ -387,7 +395,7 @@ operate independently.
 - **PLAN_13** — line editor. Phase B exposes the `history`
   store via a borrowed `HistoryStore` trait object on
   `ShellState`; the `fc` and `history` builtins are dispatched
-  by PLAN_06 to entry points whose semantics live in PLAN_13
+  by PLAN_11 to entry points whose semantics live in PLAN_13
   §8.6.
 - **PLAN_12** — traps and jobs. Phase B reserves the §5
   slots (`traps`, `jobs`, `dirs_stack`, `umask`, `cmd_hash`)

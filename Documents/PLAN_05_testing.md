@@ -1164,17 +1164,19 @@ AGENTS.md "pre-existing bugs surfaced during a subtask" rule.
   define what compatibility means.
 - `Documents/PLAN_02_architecture.md` — the architecture that
   satisfies the constraints in §5.
-- `Documents/PLAN_06_exec.md` (Phase A implemented; Phase B stub) —
+- `Documents/PLAN_06_exec.md` (Phase A implemented) —
   supplies the `ExecEnv`, `run_source`, and dispatcher this document
-  mutates; Phase B is the real executor and owner of most
-  `deferred:PLAN_11` cases.
-- `Documents/PLAN_07_line_editor.md` (pending) — owner of the
+  mutates. Phase B (the real executor) lives in PLAN_11; see entry
+  below.
+- `Documents/PLAN_11_exec_phase_b.md` (Phase B drafted) — the real
+  executor and owner of most `deferred:PLAN_11` cases.
+- `Documents/PLAN_13_line_editor.md` (pending) — owner of the
   L4 PTY harness referenced in §6.3 and the `fc`/`history`/`bind`
   builtins.
-- `Documents/PLAN_10_traps_and_jobs.md` (Phase B stub) — owner of
+- `Documents/PLAN_12_traps_and_jobs.md` (Phase B stub) — owner of
   the job-control and signal-disposition builtins in the §11 table
   (rows marked PLAN_12).
-- `Documents/PLAN_15_milestones.md` (Phase B stub) — milestone 1
+- `Documents/PLAN_18_milestones.md` (Phase B stub) — milestone 1
   ships this harness plus the L3 layer at whatever pass-rate.
 - `AGENTS.md` — testing philosophy, panic-free production code
   rules, and crate-status table that this document extends.

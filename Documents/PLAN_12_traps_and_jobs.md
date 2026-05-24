@@ -1,12 +1,18 @@
 # PLAN_12 — Traps, Signal Disposition, and Job Control
 
-> Last updated: 2026-05-23 — §5.1 dispatch-asymmetry note added
+> Last updated: 2026-05-24 — cross-refs remapped for work-order
+> renumber: PLAN_06 Phase B → PLAN_11; PLAN_16_coproc → PLAN_19_coproc;
+> PLAN_14 (AI) → PLAN_17; PLAN_15 milestones → PLAN_18; PLAN_07
+> (line editor) → PLAN_13; PLAN_08 (spec drafting) → PLAN_07;
+> PLAN_09 (fuzzer) → PLAN_08. Substance unchanged.
+>
+> Previously (2026-05-23): §5.1 dispatch-asymmetry note added
 > (resolves Q-10-B); §6 notification-dispatch subsection added
 > routing through PLAN_13 `yield_terminal` (resolves Q-10-C);
-> Q10.3 / Q-10-D resolved by `PLAN_16_coproc.md` stub.
+> Q10.3 / Q-10-D resolved by `PLAN_19_coproc.md` stub.
 > Phase: B. Status: stub (drafted; implementation pending).
-> Consumes: PLAN_02 §4, §5, §6.1; PLAN_04 §4, §7; PLAN_06 Phase A §2,
-> Phase B §13. Consumed by: PLAN_06 Phase B (gates removal of the
+> Consumes: PLAN_02 §4, §5, §6.1; PLAN_04 §4, §7; PLAN_06 Phase A §2;
+> PLAN_11 (Phase B). Consumed by: PLAN_11 (gates removal of the
 > `/bin/sh -c` fallback for any script that uses `trap`, `wait`, or
 > `&`); PLAN_05 (owns the spec-corpus rows previously assigned to
 > PLAN_06 for `bg`, `fg`, `jobs`, `kill`, `trap`, `wait`, `disown`,
@@ -79,12 +85,12 @@ acceptance criteria.
   subsystem). PLAN_12 has no opinion on command history.
 - **Coprocesses (`coproc`).** A grammar-level construct with its own
   bidirectional-pipe and PID-management semantics. Deferred to a
-  later phase; owned by `PLAN_16_coproc.md` (stub).
+  later phase; owned by `PLAN_19_coproc.md` (stub).
 - **Loadable bash builtins.** `enable -f` for dynamically loaded
   builtins is a Tier-2-via-`dlopen` problem that is out of scope
   for v1 entirely.
 - **Process accounting.** `times` is a Tier-1 builtin owned by
-  PLAN_06 (it reads `times(2)` and prints; no policy decisions).
+  PLAN_11 (it reads `times(2)` and prints; no policy decisions).
   PLAN_12 does not touch it.
 - **POSIX-only job control mode.** Bash has a `--posix` mode that
   alters some trap and job semantics (most notably the disposition
@@ -188,12 +194,12 @@ disambiguates from the `jobs` and `trap` module/type names. Other
 builtin files use the bare command name because there is no
 collision.
 
-`ShellState` is defined in PLAN_06 Phase B; PLAN_12 adds two fields.
+`ShellState` is defined in PLAN_11 (Phase B); PLAN_12 adds two fields.
 The struct layout for those fields is fixed by this document:
 
 ```rust
 pub struct ShellState {
-    // ... fields from PLAN_06 Phase B ...
+    // ... fields from PLAN_11 (Phase B) ...
     pub jobs: JobTable,
     pub traps: TrapTable,
 }
@@ -445,7 +451,7 @@ the `trap` builtin's CLI symmetry, the dispatch sites differ:
   the executor's read loop drains the pipe and looks up the
   `Signal(_)` key.
 - `TrapKind::Exit | Err | Debug | Return` entries are fired
-  from synchronous executor hooks (PLAN_06 §6) — there is no
+  from synchronous executor hooks (PLAN_11 §4) — there is no
   signal handler involved.
 
 To prevent the two dispatch paths from confusing each other,
@@ -866,7 +872,7 @@ A `SIGCHLD`-driven reap costs:
 Bench target: a tight `while true; do (sleep 0.001 &) ; wait;
 done` loop reaches steady state at within 10% of bash's
 throughput on the same hardware. Measured by
-`exec_job_throughput` Criterion bench, added in subtask 10.6.
+`exec_job_throughput` Criterion bench, added in subtask 12.6.
 
 Trap dispatch on the hot path (no traps installed, no pending
 signals) is one atomic load: `pending_signals.load(Relaxed)`.
@@ -878,18 +884,18 @@ harness is green against bash. Recommended landing order:
 
 | Subtask | Surface                                     | Gate                       |
 | ------- | ------------------------------------------- | -------------------------- |
-| 10.1    | Job table data model + unit tests           | none                       |
-| 10.2    | Job-spec parser + tests                     | 10.1                       |
-| 10.3    | Trap table data model + unit tests          | none (parallel with 10.1)  |
-| 10.4    | Signal-name resolution + tests              | 10.3                       |
-| 10.5    | Reaper + `process_pending_signals` plumbing | 10.1, 10.3, PLAN_04 §4     |
-| 10.6    | `jobs`, `disown`, `suspend` builtins        | 10.1, 10.2                 |
-| 10.7    | `bg`, `fg` builtins (incl. terminal xfer)   | 10.6, PLAN_04 §7           |
-| 10.8    | `kill`, `wait` builtins                     | 10.6                       |
-| 10.9    | `trap` builtin (all forms)                  | 10.3, 10.4, 10.5           |
-| 10.10   | EXIT / ERR / DEBUG / RETURN pseudo-signals  | 10.9                       |
-| 10.11   | Monitor-mode notification at prompt         | 10.6, 10.10, PLAN_13 ready |
-| 10.12   | Differential parity sweep against bash      | all above, PLAN_08 green   |
+| 12.1    | Job table data model + unit tests           | none                       |
+| 12.2    | Job-spec parser + tests                     | 12.1                       |
+| 12.3    | Trap table data model + unit tests          | none (parallel with 12.1)  |
+| 12.4    | Signal-name resolution + tests              | 12.3                       |
+| 12.5    | Reaper + `process_pending_signals` plumbing | 12.1, 12.3, PLAN_04 §4     |
+| 12.6    | `jobs`, `disown`, `suspend` builtins        | 12.1, 12.2                 |
+| 12.7    | `bg`, `fg` builtins (incl. terminal xfer)   | 12.6, PLAN_04 §7           |
+| 12.8    | `kill`, `wait` builtins                     | 12.6                       |
+| 12.9    | `trap` builtin (all forms)                  | 12.3, 12.4, 12.5           |
+| 12.10   | EXIT / ERR / DEBUG / RETURN pseudo-signals  | 12.9                       |
+| 12.11   | Monitor-mode notification at prompt         | 12.6, 12.10, PLAN_13 ready |
+| 12.12   | Differential parity sweep against bash      | all above, PLAN_08 green   |
 
 Each subtask is a single PR with a corpus case (or set of cases)
 flipping from `deferred:PLAN_12` to `pass`.
@@ -905,16 +911,16 @@ plan document; they are flagged for the implementation phase.
 - **Q10.2** — How does `wait -n` interact with `set -e`? If `-n`
   picks up a non-zero-exit job, does `set -e` abort? Bash: yes,
   unless the `wait` is in a condition context. We need a
-  decision and a test before 10.8.
+  decision and a test before 12.8.
 - **Q10.3** — `coproc`. Deferred from v1. **Resolved:** the
-  eventual implementation is owned by `PLAN_16_coproc.md`
+  eventual implementation is owned by `PLAN_19_coproc.md`
   (stub landed 2026-05-23). PLAN_12's role when that work
   picks up is to provide the job-table entry and the
-  `NAME_PID` binding; PLAN_06 will own grammar and executor.
+  `NAME_PID` binding; PLAN_11 will own grammar and executor.
   v1 emits a parser refusal.
 - **Q10.4** — Should we expose `JobStateChange` notifications via
-  a future PLAN_14 (AI) hook so the assistant can see "your build
-  job just failed"? Probably yes, but PLAN_14 is not drafted yet
+  a future PLAN_17 (AI) hook so the assistant can see "your build
+  job just failed"? Probably yes, but PLAN_17 is not drafted yet
   and we don't pre-build the API.
 - **Q10.5** — `set -b` (immediate notification) requires printing
   status lines from `process_pending_signals`, which can be
@@ -928,7 +934,7 @@ plan document; they are flagged for the implementation phase.
 
 - **PLAN_02** — adds `ShellState::jobs` and `ShellState::traps`
   fields per §3 above. `ExecEnv` gains a `signal_policy` field
-  per PLAN_06 Phase B §13's prediction.
+  per PLAN_11's prediction.
 - **PLAN_04** — consumes `tcsetpgrp`/`setpgid` from §7, the
   self-pipe / signalfd from §4, the SIGTTOU mask helper from §4.
   PLAN_04 does not change; PLAN_12 only consumes.
@@ -937,7 +943,7 @@ plan document; they are flagged for the implementation phase.
   acceptance criteria are PLAN_05 cases flipping to `pass`.
 - **PLAN_06 Phase A** — exposes Tier-1 dispatch; PLAN_12
   contributes eight builtin entries to the inventory.
-- **PLAN_06 Phase B** — depends on PLAN_12 to remove the
+- **PLAN_11 (Phase B)** — depends on PLAN_12 to remove the
   `/bin/sh -c` fallback for any script using `trap`, `wait`, or
   `&`. PLAN_11 already cites PLAN_12 as the owner.
 - **PLAN_13** — owns the L4 PTY harness PLAN_12 uses for `fg`
@@ -958,7 +964,7 @@ dated entry with PR hash and a one-line summary.
 
 - **15.1** — `extdebug` mode (DEBUG-trap return value can
   suppress the next command). v1 ignores DEBUG's exit status.
-  If a corpus case demands it, this becomes a subtask 10.10.x.
+  If a corpus case demands it, this becomes a subtask 12.10.x.
 
 ## References
 
@@ -972,13 +978,14 @@ dated entry with PR hash and a one-line summary.
   (`job_control`, `traps_and_signals`), §11 builtin inventory
   (rows assigned to PLAN_12), §12 status taxonomy
   (`deferred:PLAN_12`).
-- `Documents/PLAN_06_exec.md` — Phase A dispatch surface; Phase
-  B §13 (this document is what §13 punted to).
-- `Documents/PLAN_07_line_editor.md` (pending) — PTY harness;
+- `Documents/PLAN_06_exec.md` — Phase A dispatch surface.
+- `Documents/PLAN_11_exec_phase_b.md` — Phase B; this document
+  is what the Phase B §13 grid punted to.
+- `Documents/PLAN_13_line_editor.md` (pending) — PTY harness;
   "yield terminal" primitive.
-- `Documents/PLAN_08_spec_drafting.md` (pending) — per-builtin
+- `Documents/PLAN_07_spec_drafting.md` (pending) — per-builtin
   spec sheets for §6.
-- `Documents/PLAN_09_fuzzer.md` (pending) — differential
+- `Documents/PLAN_08_fuzzer.md` (pending) — differential
   parity oracle.
 - `Documents/decisions/0001-in-process-execution-and-builtin-tiers.md`
   — places the eight job-control builtins in Tier-1.

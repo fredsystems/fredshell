@@ -158,8 +158,8 @@ Performance is a feature. Specifically:
   fredshell's per-command overhead is ≤ 20% of the underlying
   `fork/exec` time.
 
-These budgets drive design choices throughout (`PLAN_11_prompt.md`,
-`PLAN_07_line_editor.md`, `PLAN_02_architecture.md`). Regressions are
+These budgets drive design choices throughout (`PLAN_14_prompt.md`,
+`PLAN_13_line_editor.md`, `PLAN_02_architecture.md`). Regressions are
 caught by benchmarks per `AGENTS.md`'s mandatory benchmarking rule.
 
 ### G6. Correctness over cleverness
@@ -341,7 +341,7 @@ This document does not specify:
 - The crate layout or module boundaries (`PLAN_02_architecture.md`).
 - The bash compatibility strategy or phasing (`PLAN_06_exec.md`).
 - Any concrete API design (the relevant `PLAN_NN_*.md`).
-- The roadmap or milestone ordering (`PLAN_15_milestones.md`).
+- The roadmap or milestone ordering (`PLAN_18_milestones.md`).
 
 If you find yourself wanting to add an interface sketch or a phase plan
 to this document, you are in the wrong document.

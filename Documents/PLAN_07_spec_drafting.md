@@ -637,12 +637,12 @@ subtask 08.6 unblocks PLAN_06 Phase B's implementation.
 
 - `Documents/PLAN_05_testing.md` — corpus structure, status
   taxonomy, builtin inventory.
-- `Documents/PLAN_06_exec.md` — Phase B subtasks gated on
+- `Documents/PLAN_11_exec_phase_b.md` — Phase B subtasks gated on
   sheets.
-- `Documents/PLAN_09_fuzzer.md` (pending) — differential oracle.
-- `Documents/PLAN_10_traps_and_jobs.md` — job-control builtin
+- `Documents/PLAN_08_fuzzer.md` (pending) — differential oracle.
+- `Documents/PLAN_12_traps_and_jobs.md` — job-control builtin
   sheets.
-- `Documents/PLAN_15_milestones.md` (pending) — milestone
+- `Documents/PLAN_18_milestones.md` (pending) — milestone
   numbering used by `defer:N`.
 - `Documents/decisions/0001-in-process-execution-and-builtin-tiers.md`
   — Tier-1 / Tier-2 definitions referenced in §2.

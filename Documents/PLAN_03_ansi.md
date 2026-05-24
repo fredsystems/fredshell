@@ -491,10 +491,10 @@ The line editor (`fredshell-line-editor`, when it exists) uses
   crate inventory and the performance budget allocation.
 - `Documents/PLAN_04_terminal_io.md` (pending) — capability
   detection, raw mode, signal handling, terminal feature negotiation.
-- `Documents/PLAN_07_line_editor.md` (pending) — line editor and
+- `Documents/PLAN_13_line_editor.md` (pending) — line editor and
   the per-keystroke redraw loop that is `fredshell-ansi`'s primary
   consumer.
-- `Documents/PLAN_11_prompt.md` (pending) — prompt segment renderer,
+- `Documents/PLAN_14_prompt.md` (pending) — prompt segment renderer,
   secondary consumer.
 - ECMA-48 (CSI), xterm ctlseqs (OSC and DECSET), kitty keyboard
   protocol specification.
