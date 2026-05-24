@@ -1,6 +1,6 @@
 # PLAN_09 — Grammar-Aware Fuzzer and Differential Oracle
 
-> Last updated: 2026-05-22 — initial draft.
+> Last updated: 2026-05-23 — Q09.1–Q09.5 resolved.
 > Phase: B. Status: stub (drafted; implementation pending).
 > Consumes: PLAN_05 §3 corpus structure; PLAN_08 spec sheets;
 > ADR 0003 test-first methodology. Consumed by: PLAN_06 Phase B
@@ -175,9 +175,11 @@ determinism. PLAN_09 enforces it three ways:
 3. **Captured environment.** Generated inputs run in a
    sandboxed `ExecEnv` with a fixed `cwd` (a per-run tempdir),
    a fixed `env` map (only the variables in `oracle/env_allow.rs`),
-   and a fixed locale (`LC_ALL=C`). The wall clock and the
-   PID are the only sources of non-determinism the oracle
-   sees, and both are filtered by `normalize.rs`.
+   a fixed locale (`LC_ALL=C`), and a fixed `umask 022`
+   applied to both the fredshell child and the reference bash
+   child before either executes the generated input. The wall
+   clock and the PID are the only sources of non-determinism
+   the oracle sees, and both are filtered by `normalize.rs`.
 
 Determinism is tested by a golden-file test
 (`tests/golden_seed_1234.rs`) that asserts seed 1234 always
@@ -311,6 +313,35 @@ zero, only terminal-producing productions are allowed.
 This produces inputs that are _wide_ rather than _deep_: lots
 of simple commands separated by `;`, not deeply nested
 `( ( ( ... ) ) )`. That matches real-world script statistics.
+
+### 4.5. Excluded builtins
+
+The grammar never generates calls to a small set of builtins
+whose invocation would either defeat a determinism invariant
+or terminate the test harness. These are excluded at the
+generator level — they are not part of the `simple_command`
+head's selectable identifier set:
+
+| Builtin  | Reason                                                                                                                                                               |
+| -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `exit`   | Terminates the shell. Tested in the spec corpus.                                                                                                                     |
+| `exec`   | Replaces the shell process. Tested in the spec corpus.                                                                                                               |
+| `umask`  | Mutating the umask defeats the `umask 022` pin (§2.3) for the remainder of the script and re-introduces filesystem-mode divergence. Tested in the spec corpus.       |
+| `cd`     | Mutating `cwd` outside the per-run tempdir is a sandbox-escape risk. Limited variants (relative paths inside the tempdir) may be re-enabled in v1.1.                 |
+| `ulimit` | Mutating resource limits affects every downstream process and is non-recoverable in some kernel configs.                                                             |
+| `trap`   | Tested by PLAN_10's spec corpus; trap-fire timing interacts with the oracle's signal handling in ways that produce false-positive divergences.                       |
+| `kill`   | Direct `kill -SIGSTOP $$` and similar self-targeted kills hang the harness. Generated `kill` calls against fuzz-spawned background jobs may be reconsidered post-v1. |
+
+Behaviours of excluded builtins are not unfuzzed in the
+absolute sense — they are exercised by the PLAN_08 spec
+corpus, which is the right tool for "test one builtin's
+behaviour exhaustively." The fuzzer's job is grammar /
+expansion / control-flow coverage, not per-builtin coverage.
+
+The exclusion list lives in
+`crates/fredshell-fuzz/src/grammar/excluded_builtins.rs` as a
+single `const &[&str]`. Adding to it requires a one-line edit
+and a regenerated determinism golden file (§2.3).
 
 ## 5. Differential oracle
 
@@ -523,31 +554,47 @@ this discoverable rather than surprising.
 ## 11. Open questions
 
 - **Q09.1** — Should generated inputs run with a fixed
-  `umask`? Default: yes, `umask 022` for both processes,
-  documented in §2.3. Alternative: leave umask uncontrolled
-  and add an output-mode-redaction filter. The fixed-umask
-  choice is simpler.
+  `umask`? **Resolved (2026-05-23):** yes, `umask 022` pinned
+  in §2.3 for both children. `umask` is added to the
+  excluded-builtins list in §4.5 to prevent mid-script
+  invocations from defeating the pin. `umask` behaviour is
+  tested by the PLAN_08 spec corpus, not the fuzzer.
 - **Q09.2** — Should we run the oracle against `dash` and
-  `mksh` in addition to `bash`? POSIX-only divergences with
-  bash are interesting because they tell us where bash itself
-  is non-portable. Default: not in v1, but the oracle API is
-  general enough to add this later.
+  `mksh` in addition to `bash`? **Resolved (2026-05-23):** no
+  in v1. The oracle module boundary in §5.1 already accepts a
+  reference-shell trait object, so adding `dash` and `mksh`
+  later is an API-compatible extension. v1 keeps bash-only to
+  hold the divergence triage surface to one shell.
 - **Q09.3** — How much of the grammar should respect
-  user-defined functions and aliases? Defining a function and
-  then calling it is a useful pattern, but it doubles the
-  effective grammar depth and complicates normalisation.
-  Default: functions are in grammar; aliases are not (aliases
-  interact poorly with our parser stage gating).
+  user-defined functions and aliases? **Resolved (2026-05-23):**
+  functions are in grammar (`function_def` non-terminal already
+  present in §4.2); aliases are excluded in v1. Aliases interact
+  poorly with parser stage gating (per PLAN_06 §13.8 Q06B.1) and
+  require minimiser special-casing. Alias behaviour is owned by
+  the PLAN_08 spec corpus; the fuzzer can revisit aliases once
+  the parser strategy ADR (0005) lands.
 - **Q09.4** — Should fuzz-derived cases live under
   `tests/spec/fuzz/` (separate top-level category) or be
   interleaved with hand-written cases under the natural
-  category (e.g., `tests/spec/parameter_expansion/`)? Default:
-  separate `fuzz/` subtree for clarity; the case file's
-  `[meta]` block records its provenance.
+  category? **Resolved (2026-05-23):** separate
+  `tests/spec/fuzz/<category>/` subtree. The case file's
+  `[meta]` block records provenance fields (`seed`, `tier`,
+  `original_input_hash`) so the source of any failing case is
+  grep-able. Hand-curated corpus density per category stays
+  visible (PLAN_05 §3 category counts are not diluted).
 - **Q09.5** — `LC_ALL=C` is the obvious locale, but some
   bash quirks only appear under UTF-8 locales (notably
   `$'...'` and pattern matching). Should there be a UTF-8
-  fuzz tier? Probably yes, eventually. Tracked.
+  fuzz tier? **Resolved (2026-05-23):** the fuzzer is
+  `LC_ALL=C`-only in v1. Shell UTF-8 _correctness_ is not
+  deferred — it is owned by the PLAN_08 `utf8_locale` spec
+  category (covering `$'...'`, multibyte glob ranges,
+  byte-vs-char `${#var}`, `LC_COLLATE` sort order, and
+  identifier byte sequences). A UTF-8 fuzz tier (`F2-utf8`)
+  is scheduled in PLAN_15 between v1.0 and v1.1 as milestone
+  M-15-utf8-fuzz. The oracle's locale parameter is already a
+  per-tier setting (§2.3 captured env), so the future tier is
+  an additive change, not a refactor.
 
 ## 12. Relationship to other plans
 

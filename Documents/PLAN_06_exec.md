@@ -1,16 +1,31 @@
 # PLAN_06 — Execution pipeline
 
-> Last updated: 2026-05-22 — Phase B section (§13) expanded from
-> stub to full draft: lexer/parser scope (§13.2), executor
-> pipeline (§13.3), `ShellState` field table (§13.4), builtin
-> inventory by owner (§13.5), ADR 0004 fallback removal in two
-> stages with exit gate (§13.6), 33-row subtask grid (§13.7),
-> open questions (§13.8). Phase A unchanged.
-> Earlier on 2026-05-21 — restructured as a single two-phase
-> document (Phase A skeleton implemented; Phase B semantics not yet
-> drafted) following the PLAN renumber.
-> Phase: A complete, B drafted. Status: Phase A implemented; Phase
-> B awaiting 06b.0 gate (PLAN_09 F1 green on `main`).
+> Last updated: 2026-05-23 — Q06B.1 (parser strategy)
+> resolved: in-house recursive-descent, ratified by ADR 0005
+> at subtask 06b.1; §13.2 prose updated, §13.8 marked resolved.
+> Q06B.3 (here-doc threshold) resolved: 64 KiB pipe/tempfile
+> boundary named `HEREDOC_PIPE_MAX`, boundary regression cases
+> required in PLAN_08 spec sheets.
+> Q06B.4 (`$RANDOM` / `$SECONDS`) resolved: per-case pin via
+> PLAN_08 sheet `[harness]` block + harness-only env channel
+>
+> - `faketime` shim for the reference bash.
+>   Q06B.5 (`$"..."`) resolved: parser accepts, executor refuses
+>   with `ExecError::Unsupported { feature: "locale_translation" }`;
+>   refusal-corpus case under `tests/spec/refusals/`.
+>   Q06B.2 (`coproc`) resolved
+>   by `PLAN_16_coproc.md` stub; v1 emits a parser refusal.
+>   Earlier on 2026-05-22 — Phase B section (§13) expanded from
+>   stub to full draft: lexer/parser scope (§13.2), executor
+>   pipeline (§13.3), `ShellState` field table (§13.4), builtin
+>   inventory by owner (§13.5), ADR 0004 fallback removal in two
+>   stages with exit gate (§13.6), 33-row subtask grid (§13.7),
+>   open questions (§13.8). Phase A unchanged.
+>   Earlier on 2026-05-21 — restructured as a single two-phase
+>   document (Phase A skeleton implemented; Phase B semantics not yet
+>   drafted) following the PLAN renumber.
+>   Phase: A complete, B drafted. Status: Phase A implemented; Phase
+>   B awaiting 06b.0 gate (PLAN_09 F1 green on `main`).
 
 This document owns the parse-and-execute pipeline that PLAN_05 (the
 spec harness) and the binary REPL call into. It is organised into two
@@ -532,11 +547,11 @@ node families:
 - `FunctionDefinition` = `name () compound` or
   `function name [()] compound`.
 
-Open question Q06B.1: do we adopt `brush-parser`, fork it, or
-write our own? Defaulted to "write our own" for total
-control over diagnostic quality and incremental parsing (PLAN_07
-highlighter needs the parser to tolerate a partial line). The
-decision lands as ADR 0005 before subtask 13B.2 starts.
+Q06B.1 was resolved on 2026-05-23: write our own
+recursive-descent parser, for total control over diagnostic
+quality and incremental parsing (PLAN_07's highlighter needs
+the parser to tolerate a partial line). ADR 0005 (subtask
+06b.1) ratifies this resolution before subtask 13B.2 starts.
 
 `coproc` is recognised but refused for v1; reserved word `time`
 is recognised and dispatched to the `time` keyword-level
@@ -750,20 +765,70 @@ operate independently.
 ### 13.8. Open questions
 
 - **Q06B.1** — Parser strategy: in-house vs `brush-parser` vs
-  fork. Default: in-house. Decided in ADR 0005 (subtask 06b.1).
+  fork. **Resolved (2026-05-23):** in-house recursive-descent.
+  Rationale captured in ADR 0005 (subtask 06b.1) and supported
+  by the prose at §13.2: diagnostic quality, incremental
+  parsing for the PLAN_07 highlighter (partial-line
+  tolerance), lossless CST for the future formatter, and
+  parse-stage / alias gating (per PLAN_09 §11 Q09.3) all
+  require parser internals we are unwilling to outsource.
+  ADR 0005 authoring remains subtask 06b.1; it ratifies this
+  resolution rather than re-litigating it.
 - **Q06B.2** — `coproc` support. Default: recognise and refuse
-  in v1; defer real implementation to v1.1. Alternative:
-  implement in Phase B if the corpus reveals frequent use
-  (current evidence: none).
-- **Q06B.3** — Here-doc temp-file threshold. Default: 64 KiB
-  body → tempfile; smaller → pipe. Alternative: always pipe
-  (simpler) or always tempfile (matches bash on macOS).
+  in v1; defer real implementation to v1.1. **Resolved
+  (2026-05-23):** v1 emits `ParseError::Unsupported { feature:
+"coproc" }` per `PLAN_16_coproc.md`; full implementation is
+  owned by PLAN_16 when picked up post-v1. No Phase B subtask.
+- **Q06B.3** — Here-doc temp-file threshold. **Resolved
+  (2026-05-23):** bodies ≤ 64 KiB are delivered via pipe;
+  bodies > 64 KiB are spilled to a tempfile under `$TMPDIR`
+  with `unlink`-immediately-after-open semantics so cleanup
+  survives signals. The threshold is a named const
+  (`HEREDOC_PIPE_MAX = 64 * 1024`) in the executor module, not
+  configurable at runtime. PLAN_08 here-doc spec sheets pin
+  the threshold and include at least one case at body size
+  `HEREDOC_PIPE_MAX - 1` and one at `HEREDOC_PIPE_MAX + 1` so
+  the boundary is regression-tested. FD-table introspection
+  (`/proc/self/fd` on Linux, `/dev/fd` on macOS) is permitted
+  to diverge from bash at the boundary: bash on Linux uses an
+  anonymous pipe up to a similar threshold, bash on macOS
+  always uses a tempfile.
 - **Q06B.4** — `$RANDOM` and `$SECONDS` determinism in the
-  spec harness. Default: harness pins both to deterministic
-  values per case; PLAN_05 sheet records the pin.
-- **Q06B.5** — Locale-translated strings (`$"..."`). Default:
-  refuse cleanly in v1, document as deferred. Alternative:
-  no-op (treat as `"..."`), matching some POSIX shells.
+  spec harness. **Resolved (2026-05-23):** the harness pins
+  both per case. Each case's `[harness]` block (PLAN_08 sheet
+  schema) accepts optional `random_seed: u32` and
+  `seconds_offset: u64` fields. fredshell consumes them from a
+  harness-only env channel (`FREDSHELL_HARNESS_RANDOM_SEED`,
+  `FREDSHELL_HARNESS_SECONDS_OFFSET`) that is never exposed
+  outside the spec runner. The reference bash receives the
+  same pin via `RANDOM=<seed>` injected before script
+  execution and a `faketime`-style clock shim for `$SECONDS`.
+  When fields are absent, the harness applies workspace
+  defaults (`random_seed = 0`, `seconds_offset = 0`) so every
+  case is reproducible without per-case config. PLAN_05
+  status taxonomy gains no new variant; pinning is an input,
+  not a status.
+- **Q06B.5** — Locale-translated strings (`$"..."`).
+  **Resolved (2026-05-23):** the parser accepts `$"..."` as
+  syntactically valid (one CST node with the
+  locale-translated marker), and the executor refuses with:
+
+  ```text
+  ExecError::Unsupported {
+      feature: "locale_translation",
+      suggestion: "v1 has no message-catalog loader; \
+                   remove the leading `$` to use the \
+                   literal string",
+  }
+  ```
+
+  Refusing cleanly preserves the contract that scripts which
+  depend on translations fail loudly rather than silently
+  losing them. Full `gettext`-style support is post-v1 work;
+  if picked up, it gets its own PLAN_XX owning document.
+  PLAN_08 has a refusal-corpus case under
+  `tests/spec/refusals/` (`locale_translation.case.toml`)
+  asserting the refusal diagnostic text.
 
 ### 13.9. Relationship to other plans
 

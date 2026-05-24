@@ -1,6 +1,9 @@
 # PLAN_10 — Traps, Signal Disposition, and Job Control
 
-> Last updated: 2026-05-22 — initial draft.
+> Last updated: 2026-05-23 — §5.1 dispatch-asymmetry note added
+> (resolves Q-10-B); §6 notification-dispatch subsection added
+> routing through PLAN_07 `yield_terminal` (resolves Q-10-C);
+> Q10.3 / Q-10-D resolved by `PLAN_16_coproc.md` stub.
 > Phase: B. Status: stub (drafted; implementation pending).
 > Consumes: PLAN_02 §4, §5, §6.1; PLAN_04 §4, §7; PLAN_06 Phase A §2,
 > Phase B §13. Consumed by: PLAN_06 Phase B (gates removal of the
@@ -76,7 +79,7 @@ acceptance criteria.
   subsystem). PLAN_10 has no opinion on command history.
 - **Coprocesses (`coproc`).** A grammar-level construct with its own
   bidirectional-pipe and PID-management semantics. Deferred to a
-  later phase; if implemented it gets a dedicated subsystem doc.
+  later phase; owned by `PLAN_16_coproc.md` (stub).
 - **Loadable bash builtins.** `enable -f` for dynamically loaded
   builtins is a Tier-2-via-`dlopen` problem that is out of scope
   for v1 entirely.
@@ -433,6 +436,25 @@ recognised signal, sourced from a `const` table in
 on Linux (`SIGRTMIN+0` through `SIGRTMAX`); RT signals are
 recognised but treated as opaque integers.
 
+**Dispatch asymmetry note.** Although `TrapKind` unifies real
+signals and pseudo signals into one table for storage and for
+the `trap` builtin's CLI symmetry, the dispatch sites differ:
+
+- `TrapKind::Signal(_)` entries are fired from the async-signal
+  path: the OS signal handler writes to the self-pipe (§5.4),
+  the executor's read loop drains the pipe and looks up the
+  `Signal(_)` key.
+- `TrapKind::Exit | Err | Debug | Return` entries are fired
+  from synchronous executor hooks (PLAN_06 §6) — there is no
+  signal handler involved.
+
+To prevent the two dispatch paths from confusing each other,
+the self-pipe drain (§5.5) carries a `debug_assert!` that the
+key it looks up is a `Signal(_)` variant, and the executor's
+pseudo-trap hooks carry the inverse assertion. These are pure
+debug checks; release builds rely on the call-site type
+discipline.
+
 ### 5.2. Signal-name resolution
 
 The `trap` builtin accepts signal names in four forms:
@@ -522,6 +544,31 @@ Each builtin in this section is a Tier-1 builtin owned by PLAN_10.
 Spec sheets for each (per PLAN_08) live under
 `Documents/specs/builtins/`. This section gives the contract; the
 sheets give the per-flag, per-edge-case behaviour.
+
+### 6.0. Notification dispatch
+
+All job-status notification lines emitted by this section — the
+default `"[N]+ Done …"` / `"[N]+ Terminated …"` lines printed at
+prompt time, and the immediate notifications printed under
+`set -b` — flow through a single dispatch helper:
+
+- **If a line-editor session is active** (interactive shell at
+  the prompt, raw mode engaged), route the line through
+  `editor.yield_terminal(|stdout| { … })`. PLAN_07 §9.5 owns the
+  primitive and its three invariants (total state restoration,
+  no keystrokes lost, SIGWINCH honoured during yield). PLAN_10
+  never touches raw mode directly.
+- **Otherwise** (non-interactive shell, or interactive shell
+  with a foreground pipeline running and no prompt up), write
+  the line directly to stderr. There is no editor state to
+  corrupt.
+
+The choice is made per-notification, not per-shell-mode: a
+trap firing under `set -b` while a foreground command is
+mid-run uses the direct-stderr path; the same trap firing
+between commands while the prompt is drawn uses the yield
+path. The helper that picks between the two lives in
+`crates/fredshell-core/src/jobs/notify.rs`.
 
 ### 6.1. `trap` — the centrepiece
 
@@ -859,10 +906,12 @@ plan document; they are flagged for the implementation phase.
   picks up a non-zero-exit job, does `set -e` abort? Bash: yes,
   unless the `wait` is in a condition context. We need a
   decision and a test before 10.8.
-- **Q10.3** — `coproc`. Deferred from v1. Tracked here so the
-  reader knows _where_ it will eventually go (it is a parser
-  feature plus a job-table feature, so its home is split between
-  PLAN_06 Phase B and a PLAN_10 §"coprocs" extension).
+- **Q10.3** — `coproc`. Deferred from v1. **Resolved:** the
+  eventual implementation is owned by `PLAN_16_coproc.md`
+  (stub landed 2026-05-23). PLAN_10's role when that work
+  picks up is to provide the job-table entry and the
+  `NAME_PID` binding; PLAN_06 will own grammar and executor.
+  v1 emits a parser refusal.
 - **Q10.4** — Should we expose `JobStateChange` notifications via
   a future PLAN_14 (AI) hook so the assistant can see "your build
   job just failed"? Probably yes, but PLAN_14 is not drafted yet
@@ -870,9 +919,10 @@ plan document; they are flagged for the implementation phase.
 - **Q10.5** — `set -b` (immediate notification) requires printing
   status lines from `process_pending_signals`, which can be
   called mid-command. The terminal state may be in raw mode
-  (line editor active). We need to coordinate with PLAN_07 for
-  a "yield the terminal for one line" primitive. Tracked as
-  cleanup once PLAN_07 lands.
+  (line editor active). **Resolved:** PLAN_07 §9.5 owns the
+  `yield_terminal` primitive; PLAN_10 §6 routes all
+  job-notification lines through it when an editor session is
+  active, and writes directly to stderr otherwise.
 
 ## 13. Relationship to other plans
 
