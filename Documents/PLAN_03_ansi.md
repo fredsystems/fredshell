@@ -1,6 +1,12 @@
 # PLAN_03 — `fredshell-ansi` Crate Design
 
-> Last updated: 2026-05-20 — implementation complete; merged via task-03/ansi-crate (27edd4e).
+> Last updated: 2026-05-24 — cascade renumber to insert PLAN_10
+> embedding (ADR 0006): body refs PLAN_13 → PLAN_14 (line editor)
+> swept by tooling; References block file paths remapped
+> (`PLAN_13_line_editor.md` → `PLAN_14_line_editor.md`;
+> `PLAN_14_prompt.md` → `PLAN_15_prompt.md`). Substance unchanged.
+>
+> Previously (2026-05-20) — implementation complete; merged via task-03/ansi-crate (27edd4e).
 > Phase: A. Status: implemented.
 > Operationalizes ADR 0002.
 
@@ -29,7 +35,7 @@ Open questions in §10 that were resolved during implementation:
 - **§10 error type granularity.** Split into encoder-side (`AnsiError`) and
   decoder-side (`DecodeError`) per §5 of this document.
 - **§10 diff SGR encoder.** Not shipped in v1; revisit when line editor
-  benchmarks exist (PLAN_13).
+  benchmarks exist (PLAN_14).
 - **§7.1 / §10 OSC terminator.** v1 emits `ST` universally as planned; no
   caller has requested `BEL`.
 - **§10 `Color::Indexed(0..=15)` normalization.** Emits as written.
@@ -37,8 +43,8 @@ Open questions in §10 that were resolved during implementation:
 Carried forward to later plans:
 
 - Capability detection / which sequences are safe to send — PLAN_04.
-- Mouse-event decoding — PLAN_13 (if enabled).
-- Diff SGR encoder evaluation — gated on PLAN_13 line-editor benchmarks.
+- Mouse-event decoding — PLAN_14 (if enabled).
+- Diff SGR encoder evaluation — gated on PLAN_14 line-editor benchmarks.
 
 This document specifies the `fredshell-ansi` crate: its scope, public
 API shape, performance contract, and the small set of structured
@@ -68,7 +74,7 @@ to an encoder-first design. This document fills in the details.
     enabled.
   - Bracketed paste enable/disable convenience.
   - Kitty keyboard protocol push/pop sequences (the negotiation
-    bytes; the _interpretation_ of received keys belongs to PLAN_13).
+    bytes; the _interpretation_ of received keys belongs to PLAN_14).
 
 - **Minimal decoder** for the structured responses a shell must read:
   - DA1 (Primary Device Attributes) response.
@@ -89,7 +95,7 @@ to an encoder-first design. This document fills in the details.
   it needs; capability _detection_ (which sequences are safe to send)
   is owned by PLAN_04.
 - Mouse-event decoding. If the line editor enables mouse modes
-  (PLAN_13 decides), the decoder side lives there, not here.
+  (PLAN_14 decides), the decoder side lives there, not here.
 
 The boundary rule: `fredshell-ansi` knows how to _speak_ terminal; it
 does not know how to _be_ a terminal. PLAN*04 owns the question of
@@ -346,7 +352,7 @@ The decoder is **byte-oriented and incremental**. The line-editor
 input loop reads bytes from the tty, buffers them, and tries to
 decode known response types. Unknown sequences are passed through to
 the line-editor's key decoder unchanged (the key decoder, owned by
-PLAN_13, has its own logic for CSI sequences that represent keys).
+PLAN_14, has its own logic for CSI sequences that represent keys).
 
 The decoder is _not_ a full ANSI state machine. It is a set of
 "does this byte slice match one of these four known shapes?"
@@ -442,7 +448,7 @@ graph) cover:
 - `encoded_len(x) == encode(x).len()` for all `x`.
 
 The crate is exercised end-to-end via the line editor (L4 PTY
-tests, PLAN_13) and indirectly through the prompt (L2 integration
+tests, PLAN_14) and indirectly through the prompt (L2 integration
 tests in `fredshell-prompt`).
 
 ## 9. Migration path
@@ -491,10 +497,10 @@ The line editor (`fredshell-line-editor`, when it exists) uses
   crate inventory and the performance budget allocation.
 - `Documents/PLAN_04_terminal_io.md` (pending) — capability
   detection, raw mode, signal handling, terminal feature negotiation.
-- `Documents/PLAN_13_line_editor.md` (pending) — line editor and
+- `Documents/PLAN_14_line_editor.md` (pending) — line editor and
   the per-keystroke redraw loop that is `fredshell-ansi`'s primary
   consumer.
-- `Documents/PLAN_14_prompt.md` (pending) — prompt segment renderer,
+- `Documents/PLAN_15_prompt.md` (pending) — prompt segment renderer,
   secondary consumer.
 - ECMA-48 (CSI), xterm ctlseqs (OSC and DECSET), kitty keyboard
   protocol specification.

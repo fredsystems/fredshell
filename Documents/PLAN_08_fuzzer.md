@@ -1,12 +1,19 @@
 # PLAN_08 — Grammar-Aware Fuzzer and Differential Oracle
 
-> Last updated: 2026-05-24 — renumbered to PLAN_08 (was PLAN_09);
+> Last updated: 2026-05-24 — cascade renumber to insert PLAN_10
+> embedding (ADR 0006): functional metadata "Consumed by" updated
+> (PLAN_11 Phase B → PLAN_12; PLAN_12 §11 → PLAN_13 §11; PLAN_18
+> milestones → PLAN_19). References block file paths remapped.
+> Body prose refs to milestones (PLAN_18 → PLAN_19) and Phase B
+> (PLAN_11/12 → PLAN_12/13) updated by sweep. Substance unchanged.
+>
+> Previously (2026-05-24): renumbered to PLAN_08 (was PLAN_09);
 > cross-refs remapped for new work-order numbering.
 > Phase: B. Status: stub (drafted; implementation pending).
 > Consumes: PLAN_05 §3 corpus structure; PLAN_07 spec sheets;
-> ADR 0003 test-first methodology. Consumed by: PLAN_11 Phase B
+> ADR 0003 test-first methodology. Consumed by: PLAN_12 Phase B
 > (gating dependency 06.0 — differential green before any Phase B
-> subtask lands); PLAN_12 §11 subtask 12.12; PLAN_18 milestones.
+> subtask lands); PLAN_13 §11 subtask 12.12; PLAN_19 milestones.
 
 PLAN_05 gives fredshell a hand-curated corpus. PLAN_07 gives every
 behaviour a prose contract. Both are essential and both are
@@ -54,7 +61,7 @@ sheets. Sheets do not exist during Phase A.
   configurable filter pipeline (e.g., PID redaction, timing
   noise) and persisted as new `tests/spec/fuzz/<hash>.case.toml`
   cases. Cases are marked `deferred:fuzz` initially; a human
-  must triage them before they are promoted to `deferred:PLAN_11`
+  must triage them before they are promoted to `deferred:PLAN_12`
   or `wontfix`.
 - **Five fuzz tiers (F1–F5).** Tiered by complexity; see §3.
 - **CI integration.** F1 runs on every PR; F2 runs nightly; F3
@@ -228,7 +235,7 @@ directory in-repo.
 
 1M inputs with a grammar profile that up-weights deferred-row
 categories (the things PLAN_07 says we will eventually
-support). Used before each PLAN_18 milestone to catch
+support). Used before each PLAN_19 milestone to catch
 regressions in surface area we are about to claim.
 
 ### 3.5. F5 — release gate
@@ -330,7 +337,7 @@ head's selectable identifier set:
 | `umask`  | Mutating the umask defeats the `umask 022` pin (§2.3) for the remainder of the script and re-introduces filesystem-mode divergence. Tested in the spec corpus.       |
 | `cd`     | Mutating `cwd` outside the per-run tempdir is a sandbox-escape risk. Limited variants (relative paths inside the tempdir) may be re-enabled in v1.1.                 |
 | `ulimit` | Mutating resource limits affects every downstream process and is non-recoverable in some kernel configs.                                                             |
-| `trap`   | Tested by PLAN_12's spec corpus; trap-fire timing interacts with the oracle's signal handling in ways that produce false-positive divergences.                       |
+| `trap`   | Tested by PLAN_13's spec corpus; trap-fire timing interacts with the oracle's signal handling in ways that produce false-positive divergences.                       |
 | `kill`   | Direct `kill -SIGSTOP $$` and similar self-targeted kills hang the harness. Generated `kill` calls against fuzz-spawned background jobs may be reconsidered post-v1. |
 
 Behaviours of excluded builtins are not unfuzzed in the
@@ -458,7 +465,7 @@ to a corpus case is a human decision.
 The operator chooses one of:
 
 1. **promote** — copy to `tests/spec/fuzz/<category>/<name>.case.toml`
-   with `status = "deferred:PLAN_11"` (or whatever PLAN owns
+   with `status = "deferred:PLAN_12"` (or whatever PLAN owns
    it). The triage file is updated with `status = "promoted"`
    and the destination path.
 2. **wontfix** — record a wontfix justification in the PLAN_07
@@ -515,8 +522,8 @@ Both reports are HTML. Both are uploaded as CI artifacts.
 | 08.11   | Coverage report integration                        | 08.7       |
 | 08.12   | Promote first fuzz-derived case to `pass` (smoke)  | 08.9       |
 
-Subtasks 08.1–08.7 are the **PLAN_11 Phase B gate**. Once F1 is
-green on `main`, the 06b.0 gate (PLAN_11 §10) is satisfied and
+Subtasks 08.1–08.7 are the **PLAN_12 Phase B gate**. Once F1 is
+green on `main`, the 06b.0 gate (PLAN_12 §10) is satisfied and
 Phase B subtasks may begin landing.
 
 > Subtask IDs renumbered from `09.N` to `08.N` in the work-order
@@ -576,7 +583,7 @@ this discoverable rather than surprising.
   user-defined functions and aliases? **Resolved (2026-05-23):**
   functions are in grammar (`function_def` non-terminal already
   present in §4.2); aliases are excluded in v1. Aliases interact
-  poorly with parser stage gating (per PLAN_11 §9 Q06B.1) and
+  poorly with parser stage gating (per PLAN_12 §9 Q06B.1) and
   require minimiser special-casing. Alias behaviour is owned by
   the PLAN_07 spec corpus; the fuzzer can revisit aliases once
   the parser strategy ADR (0005) lands.
@@ -598,7 +605,7 @@ this discoverable rather than surprising.
   category (covering `$'...'`, multibyte glob ranges,
   byte-vs-char `${#var}`, `LC_COLLATE` sort order, and
   identifier byte sequences). A UTF-8 fuzz tier (`F2-utf8`)
-  is scheduled in PLAN_18 between v1.0 and v1.1 as milestone
+  is scheduled in PLAN_19 between v1.0 and v1.1 as milestone
   M-15-utf8-fuzz. The oracle's locale parameter is already a
   per-tier setting (§2.3 captured env), so the future tier is
   an additive change, not a refactor.
@@ -608,13 +615,13 @@ this discoverable rather than surprising.
 - **PLAN_05** — corpus harness; PLAN_08 produces additional
   cases consumed by the same runner. Status taxonomy gains
   `deferred:fuzz` for unminified pending triage.
-- **PLAN_11 Phase B** — gating dependency. Subtask 06.0 is
+- **PLAN_12 Phase B** — gating dependency. Subtask 06.0 is
   "PLAN_08 F1 green on `main`."
 - **PLAN_07** — sheets drive grammar weights (§4.3) and
   classify wontfix divergences (§6).
-- **PLAN_12** — job-control divergences are filtered by the
+- **PLAN_13** — job-control divergences are filtered by the
   grammar profile (no `&` in F1 to avoid timing flakes).
-- **PLAN_18** — F4 and F5 are gates on milestone transitions.
+- **PLAN_19** — F4 and F5 are gates on milestone transitions.
 - **ADR 0003** — establishes differential testing as the
   methodology; this document is the implementation.
 
@@ -622,11 +629,11 @@ this discoverable rather than surprising.
 
 - `Documents/PLAN_05_testing.md` — §3 corpus categories, §12
   status taxonomy.
-- `Documents/PLAN_11_exec_phase_b.md` — Phase B gating on
+- `Documents/PLAN_12_exec_phase_b.md` — Phase B gating on
   PLAN_08 F1.
 - `Documents/PLAN_07_spec_drafting.md` — sheet front-matter
   consumed by `grammar/corpus.rs`.
-- `Documents/PLAN_12_traps_and_jobs.md` — categories the
+- `Documents/PLAN_13_traps_and_jobs.md` — categories the
   fuzzer carefully avoids in F1 (job control, traps).
 - `Documents/decisions/0003-test-first-compatibility-methodology.md`
   — establishes differential testing as the methodology.

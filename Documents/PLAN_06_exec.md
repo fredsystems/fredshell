@@ -1,6 +1,12 @@
 # PLAN_06 — Execution pipeline, Phase A (skeleton)
 
-> Last updated: 2026-05-23 — Phase B (formerly §13 of this
+> Last updated: 2026-05-24 — cascade renumber to insert PLAN_10
+> embedding (ADR 0006): functional-metadata line "Phase B lives
+> in PLAN_11" updated to PLAN_12. Renumber-log narrative below
+> preserved verbatim (historical numbers refer to the prior
+> work-order renumber, not the post-cascade state).
+>
+> Previously (2026-05-23): Phase B (formerly §13 of this
 > document) extracted to its own document, `PLAN_06b_exec_phase_b.md`.
 > PLAN_06 now covers Phase A only: the implemented stub executor and
 > the stable public surface PLAN_05 + the binary REPL call into.
@@ -16,7 +22,7 @@
 > drafted) following the PLAN renumber.
 >
 > Phase: A complete. Status: Phase A implemented. Phase B lives
-> in PLAN_11.
+> in PLAN_12.
 
 This document owns Phase A of the parse-and-execute pipeline that
 PLAN_05 (the spec harness) and the binary REPL call into. Phase A
@@ -64,7 +70,7 @@ Explicitly out of scope:
 - `setitimer` / `SIGALRM` timeout plumbing.
 - The pipeline `poll` loop.
 
-Out-of-scope items are owned by Phase B (PLAN_11) unless noted otherwise.
+Out-of-scope items are owned by Phase B (PLAN_12) unless noted otherwise.
 
 ## 2. Public surface
 
@@ -80,7 +86,7 @@ binary REPL and the spec harness use only the items below.
 /// Pure function: no I/O, no global state, no environment access.
 /// The returned `Script` is consumed by `run_script`.
 ///
-/// v0 implementation: wraps the source as-is. Phase B (PLAN_11)
+/// v0 implementation: wraps the source as-is. Phase B (PLAN_12)
 /// replaces the body without changing this signature.
 pub fn parse(source: &str) -> Result<Script, ParseError>;
 
@@ -94,7 +100,7 @@ pub struct ParseError {
 
 #[non_exhaustive]
 pub enum ParseErrorKind {
-    /// v0 placeholder. Phase B (PLAN_11) adds real categorical variants
+    /// v0 placeholder. Phase B (PLAN_12) adds real categorical variants
     /// (`UnexpectedToken`, `UnterminatedString`, etc.). Anything that
     /// would fail to parse in v0 (which is nothing — the v0 parser
     /// accepts everything) maps here.
@@ -104,7 +110,7 @@ pub enum ParseErrorKind {
 
 `Script` deliberately does not expose `Span`, AST nodes, or any
 walker. The harness does not need to walk the AST; the binary does
-not need to walk the AST; Phase B (PLAN_11) owns the AST internals and is
+not need to walk the AST; Phase B (PLAN_12) owns the AST internals and is
 free to evolve them without breaking either consumer.
 
 ### 2.2. `ExecEnv`
@@ -113,7 +119,7 @@ free to evolve them without breaking either consumer.
 /// The environment a script executes in. Constructed by the host
 /// (binary or harness), passed to the executor, owned by the caller.
 ///
-/// `#[non_exhaustive]` because Phase B (PLAN_11) will add fields
+/// `#[non_exhaustive]` because Phase B (PLAN_12) will add fields
 /// (`shell: ShellState`, `builtins: BuiltinRegistry`,
 /// `path_policy`, `signal_policy`, real `stdin`/`stdout`/`stderr`).
 #[non_exhaustive]
@@ -124,7 +130,7 @@ pub struct ExecEnv {
     /// Environment variables visible to the script.
     ///
     /// v0 uses `String` keyed by `String` for test ergonomics and
-    /// because no real env handling exists yet. Phase B (PLAN_11)
+    /// because no real env handling exists yet. Phase B (PLAN_12)
     /// migrates to `HashMap<OsString, OsString>` per PLAN_02 §4.2.
     /// The migration cost is acknowledged: callers that construct
     /// `ExecEnv` in tests will need to update key/value types. There
@@ -136,7 +142,7 @@ pub struct ExecEnv {
 
 `stdin`, `stdout`, `stderr`, `shell`, `builtins`, `path_policy`, and
 `signal_policy` are intentionally absent in v0. The stub dispatcher
-inherits the host's stdio via `Command`. The Phase B (PLAN_11) real
+inherits the host's stdio via `Command`. The Phase B (PLAN_12) real
 executor adds them as boxed handles per PLAN_02 §4.2.
 
 ### 2.3. `run_source` and `run_script`
@@ -197,7 +203,7 @@ pub enum ExecError {
 }
 ```
 
-Both error enums are `#[non_exhaustive]` so Phase B (PLAN_11) can add
+Both error enums are `#[non_exhaustive]` so Phase B (PLAN_12) can add
 variants (`Redirection`, `ExecFailure`, `Span`-bearing variants, etc.)
 without breaking match exhaustiveness in callers.
 
@@ -232,7 +238,7 @@ harness run hermetically per PLAN_05.
 ### 2.6. `Tier2Builtin` and `Tier2Ctx`
 
 The trait and context struct ship in Phase A to lock the shape Phase B
-(PLAN_11) will consume. No tier-2 builtins are registered in v0; the
+(PLAN_12) will consume. No tier-2 builtins are registered in v0; the
 registry type exists but is always empty.
 
 ```rust
@@ -260,7 +266,7 @@ pub enum Tier2Error {
 }
 ```
 
-The `String` / `&Path` types are v0; Phase B (PLAN_11) migrates `args` and
+The `String` / `&Path` types are v0; Phase B (PLAN_12) migrates `args` and
 `env` to `OsString` together with `ExecEnv::env`.
 
 ## 3. Internal dispatcher (stub implementation)
@@ -286,14 +292,14 @@ The stub:
    skip blank lines) and calls `dispatch_line` on each.
 3. `dispatch_line` returns `CoreResult<()>`; the stub maps `Ok(())`
    to `ExitStatus(0)` and `Err` to the appropriate `ExecError`
-   variant. The full exit-status plumbing lands with Phase B (PLAN_11).
+   variant. The full exit-status plumbing lands with Phase B (PLAN_12).
 
 The stub deliberately does not implement multi-line constructs
 (`if`, `for`, `while`, function definitions, here-documents). Any
 input that would require real parsing executes line-by-line, which
 is wrong for those constructs and right for everything the v0 spec
 corpus exercises. PLAN_05 §3 lists which corpus tests are expected
-to fail against the stub; Phase B (PLAN_11) makes them pass.
+to fail against the stub; Phase B (PLAN_12) makes them pass.
 
 ## 4. Crate placement
 
@@ -322,7 +328,7 @@ fredshell-core/src/
 ```
 
 The existing `builtins/` and `repl::dispatch_line` are unchanged in
-Phase A. Phase B (PLAN_11) folds them into the new `exec/` module.
+Phase A. Phase B (PLAN_12) folds them into the new `exec/` module.
 
 ## 5. Wiring the binary REPL
 
@@ -341,7 +347,7 @@ match fredshell_core::run_source(&line, &mut env) {
 ```
 
 `ExecEnv` construction is hoisted out of the per-line loop and reused
-across iterations once `ShellState` lands in Phase B (PLAN_11). For v0 it
+across iterations once `ShellState` lands in Phase B (PLAN_12). For v0 it
 is fine to construct per-line; the cost is one `current_dir` syscall
 and one `vars_os` walk, which is well inside the §9 budget.
 
@@ -355,12 +361,12 @@ PLAN_05 §5 will document the harness side. The contract from Phase A:
   compares them against the case's expected values.
 - v0: `stdout` / `stderr` are captured by setting `Command::stdout`
   / `Command::stderr` to pipes inside `dispatch_line`. The stub
-  dispatcher exposes an internal hook the harness uses. Phase B (PLAN_11)
+  dispatcher exposes an internal hook the harness uses. Phase B (PLAN_12)
   replaces this with real `Box<dyn Write>` plumbing on `ExecEnv`.
 
 The "internal hook" is the one carve-out from the public surface
 that Phase A permits, on the grounds that the stub is provisional and
-the harness needs _some_ way to capture output before Phase B (PLAN_11)
+the harness needs _some_ way to capture output before Phase B (PLAN_12)
 ships real I/O plumbing. It lives in `exec::testing` behind a
 crate-internal visibility and is removed when Phase B lands real
 stdio on `ExecEnv`.
@@ -381,7 +387,7 @@ describes the final target:
 | `parse` returns      | walkable `Ast`                   | opaque `Script`                   |
 | `ExecError` variants | full categorical set with `Span` | minimal stub set                  |
 
-Every v0 cell migrates to the PLAN_02 cell during Phase B (PLAN_11), and
+Every v0 cell migrates to the PLAN_02 cell during Phase B (PLAN_12), and
 PLAN_02 §12 records when each migration completes.
 
 ## 8. Testing
@@ -409,7 +415,7 @@ benches/exec_roundtrip.rs
   parse_and_exec    — run_source("true", &mut env)
 ```
 
-Budgets are not enforced in Phase A; the bench exists so Phase B (PLAN_11)
+Budgets are not enforced in Phase A; the bench exists so Phase B (PLAN_12)
 has a baseline. The `parse_only` number should be ~zero (the stub
 clones a short string). The `parse_and_exec` number is bounded by
 `fork + execve + /bin/sh "true"`, which is ~milliseconds on Linux —
@@ -476,13 +482,13 @@ To be filled if any subtask surfaces a pre-existing bug per the
 
 - PLAN_02 §4 (public surface target), §12 (implementation status).
 - PLAN_05 (spec harness consumer).
-- PLAN_11 (Phase B — replaces the Phase A stub with real
+- PLAN_12 (Phase B — replaces the Phase A stub with real
   semantics behind this same public surface).
 - PLAN_07 (spec drafting — per-builtin and per-feature acceptance
-  criteria that gate Phase B work in PLAN_11).
+  criteria that gate Phase B work in PLAN_12).
 - PLAN_08 (differential + fuzzer — correctness measurement for
-  Phase B in PLAN_11).
-- PLAN_12 (traps + job control — consumes Phase B's hook points).
+  Phase B in PLAN_12).
+- PLAN_13 (traps + job control — consumes Phase B's hook points).
 - ADR 0003 (test-first compatibility — why Phase A exists at all).
 - ADR 0004 (strict-default execution — sunset path for the
   `FREDSHELL_ALLOW_SH_FALLBACK` escape hatch).

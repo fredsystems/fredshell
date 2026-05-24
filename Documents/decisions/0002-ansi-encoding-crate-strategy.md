@@ -116,7 +116,7 @@ in fredshell because that is the dominant use case here.
 - Crate scope stays small and focused.
 - No cross-repo dependency or version-skew problem.
 - The `Write`-based, allocation-light design is a hard requirement for the
-  line-editor performance budget (see `PLAN_13_line_editor.md` once it
+  line-editor performance budget (see `PLAN_14_line_editor.md` once it
   exists).
 
 ### Negative

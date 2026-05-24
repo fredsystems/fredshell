@@ -1,6 +1,13 @@
 # PLAN_07 — Spec-Sheet Drafting Methodology
 
-> Last updated: 2026-05-23 — §4 template canonicalises
+> Last updated: 2026-05-24 — cascade renumber to insert PLAN_10
+> embedding (ADR 0006): functional metadata "Consumed by"
+> updated — "PLAN_06 Phase B" → "PLAN_12 Phase B" and `10.N`
+> subtask prefix → `12.N` (PLAN_13 retains its `12.N` subtask
+> IDs per stable-subtask-ID rule). References block file paths
+> remapped. Substance unchanged.
+>
+> Previously (2026-05-23): §4 template canonicalises
 > `Tier: feature` (resolves Q08.1 / Q-08-A); §5.3 documents the
 > "workarounds are best-effort guidance, not contract" policy
 > (resolves Q08.2 / Q-08-B); §3 template adds optional
@@ -16,11 +23,11 @@
 > Phase: B. Status: stub (methodology drafted; sheets pending).
 > Consumes: PLAN_05 §3 corpus structure, PLAN_05 §11 builtin
 > inventory; ADR 0003 test-first methodology; ADR 0001 builtin
-> tiers. Consumed by: PLAN_06 Phase B (each PLAN_06 subtask requires
+> tiers. Consumed by: PLAN_12 Phase B (each PLAN_12 subtask requires
 > a `support`-classed sheet before implementation); PLAN_08 (uses
-> sheets as the prose oracle for differential cases); PLAN_12
+> sheets as the prose oracle for differential cases); PLAN_13
 > (each of the eight job-control builtins requires a sheet before
-> the corresponding 10.N subtask lands).
+> the corresponding 12.N subtask lands).
 
 PLAN_05 (testing) gives us the executable definition of correctness:
 the corpus. ADR 0003 says the corpus is the source of truth. But the
@@ -62,12 +69,12 @@ classify each one_:
   invoking it will get a loud, deliberate error citing the sheet.
   See §6.
 - **`defer:N`** — fredshell will eventually support this, but not
-  in milestone N. `N` is a PLAN_15 milestone number. Deferred
+  in milestone N. `N` is a PLAN_16 milestone number. Deferred
   rows turn into post-v1 worklist entries.
 
 Every behaviour in bash's surface has exactly one classification.
 A sheet with un-classified rows is incomplete; it cannot drive a
-PLAN_06 / PLAN_12 subtask.
+PLAN_06 / PLAN_13 subtask.
 
 ## 2. What gets a sheet
 
@@ -85,10 +92,10 @@ Approximately 57 Tier-1 builtins from PLAN_05 §11. Owners:
   `shopt`, `source`, `test`, `times` (from PLAN_06), `true`,
   `typeset`, `unalias`, `unset`, plus the 8 already-implemented
   rows kept for reference).
-- 8 sheets owned by PLAN_12 (`bg`, `fg`, `jobs`, `kill`, `wait`,
+- 8 sheets owned by PLAN_13 (`bg`, `fg`, `jobs`, `kill`, `wait`,
   `disown`, `suspend`, `trap`).
-- 2 sheets owned by PLAN_13 (`fc`, `history`).
-- 7 sheets in "PLAN_12 extended utilities" category: `caller`,
+- 2 sheets owned by PLAN_14 (`fc`, `history`).
+- 7 sheets in "PLAN_13 extended utilities" category: `caller`,
   `dirs`, `getopts`, `hash`, `help`, `logout`, `mapfile`, `popd`,
   `printf`, `pushd`, `read`, `readarray`, `type`, `ulimit`, `umask`.
 
@@ -137,7 +144,7 @@ reference manual:
   multibyte handling. This category exists because PLAN_08's
   v1 fuzzer is `LC_ALL=C`-only (PLAN_08 §11 Q09.5); locale
   correctness is therefore hand-curated here until the
-  post-v1 `F2-utf8` fuzz tier ships (PLAN_15 milestone
+  post-v1 `F2-utf8` fuzz tier ships (PLAN_16 milestone
   M-15-utf8-fuzz). Cases live in `tests/spec/utf8_locale/`.
 
 That is approximately 22 feature sheets plus one UTF-8/locale
@@ -155,7 +162,7 @@ number is the basis for the batch-of-10 review cadence in §7.
   utilities" whose contract is determined by usage, not by
   matching bash. They get individual planning when they are
   proposed.
-- **`coproc`.** Deferred from v1 entirely (PLAN_12 §12 Q10.3).
+- **`coproc`.** Deferred from v1 entirely (PLAN_13 §12 Q10.3).
   It will get a sheet when its owning plan exists.
 - **POSIX-`--posix` mode.** Not a v1 target; sheets describe
   default-bash semantics only. POSIX-only behaviour is noted in
@@ -292,7 +299,7 @@ file bugs by quoting the row number.
 
 ## 6. Deferred rows
 
-For every `defer:N` row in §3, one paragraph plus a PLAN_15
+For every `defer:N` row in §3, one paragraph plus a PLAN_16
 milestone reference. The paragraph names the missing-feature
 dependency (e.g., "requires Tier-2 process accounting") and
 states the post-v1 reclassification target.
@@ -329,7 +336,7 @@ artifacts:
 - An implementation that makes the case pass.
 
 The case is written _before_ the implementation. The case starts
-life as `status = "deferred:PLAN_11"` (or 10, or 07), and flips
+life as `status = "deferred:PLAN_12"` (or 10, or 07), and flips
 to `status = "pass"` in the subtask that ships the
 implementation. This is the same workflow PLAN_05 §11 already
 describes; PLAN_07 sheets are the prose half of that contract.
@@ -366,7 +373,7 @@ conversation.
 ### 5.3. `defer:N`
 
 The behaviour will be supported, but not before milestone N (a
-PLAN_15 milestone number). The user invoking it gets a
+PLAN_16 milestone number). The user invoking it gets a
 different error:
 
 ```text
@@ -487,7 +494,7 @@ batch 1:
    per-flag detail).
 
 Subsequent batches are organised by owning PLAN doc so that
-related behaviours are reviewed together (batch 2 = PLAN_12
+related behaviours are reviewed together (batch 2 = PLAN_13
 job-control builtins; batch 3 = grammar features for
 expansions; etc.).
 
@@ -580,14 +587,14 @@ corpus, not the sheets. Sheets are commentary on the corpus.
 | ------- | --------------------------------------------------------------------- | ------- | ---------------------------- |
 | 08.1    | Author `Documents/specs/_TEMPLATE.md` and `Documents/specs/README.md` | PLAN_07 | none                         |
 | 08.2    | Draft and review batch 1 (10 sheets: `cd`, trivial builtins, state)   | PLAN_07 | 08.1                         |
-| 08.3    | Draft and review batch 2 (PLAN_12 job-control builtins)               | PLAN_07 | 08.2, PLAN_12 reviewed       |
+| 08.3    | Draft and review batch 2 (PLAN_13 job-control builtins)               | PLAN_07 | 08.2, PLAN_13 reviewed       |
 | 08.4    | `cargo xtask check-specs` cross-reference checker                     | PLAN_07 | 08.1                         |
 | 08.5    | `refuse!` macro and unit tests                                        | PLAN_07 | 08.1                         |
 | 08.6    | Draft and review batches 3–8 (~60 sheets, owner-grouped)              | PLAN_07 | 08.2                         |
 | 08.7    | Sheet-driven `help` builtin                                           | PLAN_06 | 08.1, PLAN_06 Phase B `help` |
 | 08.8    | First wontfix refusal corpus cases (`tests/spec/refusals/`)           | PLAN_07 | 08.5                         |
 
-Subtasks 08.2 and 08.3 unblock PLAN_12's implementation;
+Subtasks 08.2 and 08.3 unblock PLAN_13's implementation;
 subtask 08.6 unblocks PLAN_06 Phase B's implementation.
 
 ## 11. Open questions
@@ -622,27 +629,27 @@ subtask 08.6 unblocks PLAN_06 Phase B's implementation.
 - **PLAN_05** — corpus and harness; PLAN_07 sheets reference
   PLAN_05 cases by path; PLAN_05 §11 is the inventory PLAN_07
   exhausts. PLAN_07 does not change the harness.
-- **PLAN_11** — every PLAN_11 (Phase B) subtask is gated
-  on a `support`-classed sheet existing. PLAN_11 already
+- **PLAN_12** — every PLAN_12 (Phase B) subtask is gated
+  on a `support`-classed sheet existing. PLAN_12 already
   cites PLAN_07.
 - **PLAN_08** — uses sheets as the prose oracle when deciding
   what to fuzz. The fuzzer's expectation file format
   references sheet row numbers.
-- **PLAN_12** — eight job-control builtin sheets are batch 2.
-  Each PLAN_12 subtask is gated on its sheet being approved.
-- **PLAN_15** — milestone-N labels in `defer:N` rows point at
-  PLAN_15 milestone definitions.
+- **PLAN_13** — eight job-control builtin sheets are batch 2.
+  Each PLAN_13 subtask is gated on its sheet being approved.
+- **PLAN_16** — milestone-N labels in `defer:N` rows point at
+  PLAN_16 milestone definitions.
 
 ## 13. References
 
 - `Documents/PLAN_05_testing.md` — corpus structure, status
   taxonomy, builtin inventory.
-- `Documents/PLAN_11_exec_phase_b.md` — Phase B subtasks gated on
+- `Documents/PLAN_12_exec_phase_b.md` — Phase B subtasks gated on
   sheets.
 - `Documents/PLAN_08_fuzzer.md` (pending) — differential oracle.
-- `Documents/PLAN_12_traps_and_jobs.md` — job-control builtin
+- `Documents/PLAN_13_traps_and_jobs.md` — job-control builtin
   sheets.
-- `Documents/PLAN_18_milestones.md` (pending) — milestone
+- `Documents/PLAN_19_milestones.md` (pending) — milestone
   numbering used by `defer:N`.
 - `Documents/decisions/0001-in-process-execution-and-builtin-tiers.md`
   — Tier-1 / Tier-2 definitions referenced in §2.

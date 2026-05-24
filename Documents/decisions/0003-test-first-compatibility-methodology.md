@@ -90,14 +90,14 @@ Planning documents are split into two phases:
 - **Phase A** docs are corpus-independent and drafted before the corpus
   exists. These include the testing methodology itself (PLAN_05), crate
   architecture (PLAN_02), foundational subsystems (PLAN_03, PLAN_04,
-  PLAN_13, PLAN_14), and peripheral design (PLAN_15, PLAN_16, PLAN_17).
+  PLAN_14, PLAN_15), and peripheral design (PLAN_16, PLAN_17, PLAN_18).
 - **Phase B** docs are corpus-dependent. They receive stubs during
   Phase A and are fully drafted only after the v1 corpus is curated
   and the harness reports a baseline pass-rate. These are: the bash
   compat executor and Tier-1 builtin inventory (PLAN_06 Phase B),
   spec-sheet drafting (PLAN_07), the fuzzer / differential program
-  (PLAN_08), traps and job control (PLAN_12), and the implementation
-  roadmap (PLAN_18). Drafting these before the corpus
+  (PLAN_08), traps and job control (PLAN_13), and the implementation
+  roadmap (PLAN_19). Drafting these before the corpus
   exists would mean guessing at priorities; drafting them after means
   data-driven prioritization.
 
@@ -195,16 +195,16 @@ with executor, no sandboxable environment).
 - `PLAN_02_architecture.md` — the architectural constraints this ADR
   imposes (separable parser, sandboxable executor, batch-mode entry).
 - `PLAN_06_exec.md` — the Phase A execution-pipeline scaffold; the
-  full Phase B compat document (PLAN_11) carries the executor
+  full Phase B compat document (PLAN_12) carries the executor
   semantics and Tier-1 builtin inventory informed by harness
   output and corpus frequency analysis.
 - `PLAN_07_spec_drafting.md` — the per-builtin and per-feature spec
   sheets whose drafting order is informed by corpus frequency.
 - `PLAN_08_fuzzer.md` — the grammar-aware fuzzer and differential
   oracle that expand the corpus beyond hand-written cases.
-- `PLAN_12_traps_and_jobs.md` — traps, signal disposition, and job
+- `PLAN_13_traps_and_jobs.md` — traps, signal disposition, and job
   control whose detail is informed by harness output.
-- `PLAN_18_milestones.md` (pending) — the Phase B roadmap whose
+- `PLAN_19_milestones.md` (pending) — the Phase B roadmap whose
   phasing is informed by pass-rate progression.
 - ADR 0001 — in-process execution; this ADR is the methodology by
   which tier-2 builtins are measured for parity against bash.
