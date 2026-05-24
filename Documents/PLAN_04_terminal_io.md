@@ -1,11 +1,17 @@
 # PLAN_04 — Terminal I/O, Signals, and Capability Detection
 
-> Last updated: 2026-05-20 — implementation complete on
+> Last updated: 2026-05-24 — cascade renumber to insert PLAN_10
+> embedding (ADR 0006): functional metadata "Consumed by" and
+> body cross-references PLAN_13 → PLAN_14 (line editor),
+> PLAN_14 → PLAN_15 (prompt) updated by sweep. Substance
+> unchanged.
+>
+> Previously (2026-05-20) — implementation complete on
 > task-04/terminal-io; status flipped to `implemented`; added
 > §14 implementation log and §15 cleanup items.
 > Phase: A. Status: implemented.
-> Consumes: PLAN_02 §5, §6.1. Consumed by: PLAN_07 (line editor),
-> PLAN_11 (prompt), PLAN_03 (capability boundary).
+> Consumes: PLAN_02 §5, §6.1. Consumed by: PLAN_14 (line editor),
+> PLAN_15 (prompt), PLAN_03 (capability boundary).
 
 This document specifies the layer that sits between the kernel's
 terminal interface and the rest of fredshell. It owns: raw mode
@@ -69,19 +75,19 @@ PLAN_04 does not anticipate this and does not pull in
 - **Encoding ANSI sequences.** PLAN_03 owns that. PLAN_04 emits
   raw bytes only for terminal probes (see §6).
 - **Key decoding.** Translating decoded CSI/SS3 sequences into
-  semantic `KeyEvent`s belongs to PLAN_07.
-- **Prompt rendering.** PLAN_11.
+  semantic `KeyEvent`s belongs to PLAN_14.
+- **Prompt rendering.** PLAN_15.
 - **Pipeline fd setup.** That belongs to `fredshell-core::exec`;
   PLAN_04 only provides the signal/wait primitives it needs.
 - **Mouse input.** Deferred. If/when the line editor enables it,
-  decoding lives in PLAN_07; PLAN_04 only flips the DECSET bits.
+  decoding lives in PLAN_14; PLAN_04 only flips the DECSET bits.
 - **Terminfo / termcap.** fredshell ships hard-coded sequences
   (per PLAN_03); capability decisions come from runtime probes,
   not from a terminfo database.
 
 The boundary rule: `PLAN_04` owns _when_ it is safe to speak which
 dialect, and _how_ to listen to the kernel. `PLAN_03` owns _what_
-the dialect looks like on the wire. `PLAN_07` owns _meaning_ once
+the dialect looks like on the wire. `PLAN_14` owns _meaning_ once
 bytes are decoded into key events.
 
 ## 2. Design tenets
@@ -507,8 +513,8 @@ PLAN_04 is not on the keystroke hot path. The hot path is:
 
 1. `pselect` returns "tty readable".
 2. `read(tty)` into a small fixed buffer.
-3. Hand bytes to PLAN_07's key decoder.
-4. PLAN_07 produces a `KeyEvent`.
+3. Hand bytes to PLAN_14's key decoder.
+4. PLAN_14 produces a `KeyEvent`.
 5. Line editor mutates buffer, calls PLAN_03 encoders to redraw.
 
 PLAN_04's contribution is steps 1 and 2: one syscall to wait, one
@@ -542,7 +548,7 @@ rollout sequence is:
 4. Add `wait()` multiplexer and self-pipe.
 5. Add process-group helpers (`give/take_foreground`).
 6. Wire into the REPL: replace the current "read line from stdin"
-   stub with a real `TerminalSession`-driven loop. PLAN_07 then
+   stub with a real `TerminalSession`-driven loop. PLAN_14 then
    builds on top.
 
 Each step is independently testable and committable.
@@ -584,9 +590,9 @@ rather than rediscovering them.
   integration tests.
 - **PLAN_06** (exec / job control) consumes
   `give_foreground` / `take_foreground` and the `CancellationToken`.
-- **PLAN_07** (line editor) consumes `wait()` and the raw-mode
+- **PLAN_14** (line editor) consumes `wait()` and the raw-mode
   transition, and decodes the bytes PLAN_04's `input()` returns.
-- **PLAN_11** (prompt) consumes `Capabilities` to decide which
+- **PLAN_15** (prompt) consumes `Capabilities` to decide which
   PLAN_03 sequences are safe.
 
 ## 14. Implementation log

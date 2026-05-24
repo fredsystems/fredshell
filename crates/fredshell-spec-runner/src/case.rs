@@ -29,7 +29,7 @@
 //! * `[env]` (optional) — environment variables; supports `$SANDBOX`
 //!   placeholder substitution at runtime (see [`crate::Sandbox`]).
 //!
-//! Future fields reserved for later subtasks: `stdin` (`PLAN_10`),
+//! Future fields reserved for later subtasks: `stdin` (`PLAN_12`),
 //! `args`, `timeout`, per-case dispositional metadata.
 
 use serde::Deserialize;
@@ -82,7 +82,7 @@ pub enum CaseStatus {
     /// Documented intentional non-goal.
     Wontfix,
     /// Case will match once the named plan lands. The string is
-    /// stored verbatim (e.g. `"PLAN_06"`) so 05.5 / xtask compat
+    /// stored verbatim (e.g. `"PLAN_11"`) so 05.5 / xtask compat
     /// can filter on it.
     Deferred(String),
 }
@@ -301,8 +301,8 @@ mod tests {
         assert_eq!(CaseStatus::parse("fail").unwrap(), CaseStatus::Fail);
         assert_eq!(CaseStatus::parse("wontfix").unwrap(), CaseStatus::Wontfix);
         assert_eq!(
-            CaseStatus::parse("deferred:PLAN_06").unwrap(),
-            CaseStatus::Deferred("PLAN_06".to_owned())
+            CaseStatus::parse("deferred:PLAN_11").unwrap(),
+            CaseStatus::Deferred("PLAN_11".to_owned())
         );
     }
 
@@ -315,7 +315,7 @@ mod tests {
 
     #[test]
     fn case_status_display_round_trips_with_parse() {
-        for raw in ["pass", "fail", "wontfix", "deferred:PLAN_06"] {
+        for raw in ["pass", "fail", "wontfix", "deferred:PLAN_11"] {
             let parsed = CaseStatus::parse(raw).unwrap();
             assert_eq!(parsed.to_string(), raw);
         }
@@ -503,13 +503,13 @@ extra = { FOO = "bar", BAZ = "qux" }
             r#"
 description = "meta"
 script = "true\n"
-status = "deferred:PLAN_06"
+status = "deferred:PLAN_11"
 tags = ["parameter-expansion", "posix-overlap"]
 bash_version_min = "5.0"
 "#,
         );
         let c = Case::load(&path).unwrap();
-        assert_eq!(c.status, CaseStatus::Deferred("PLAN_06".to_owned()));
+        assert_eq!(c.status, CaseStatus::Deferred("PLAN_11".to_owned()));
         assert_eq!(c.tags, vec!["parameter-expansion", "posix-overlap"]);
         assert_eq!(c.bash_version_min.as_deref(), Some("5.0"));
     }

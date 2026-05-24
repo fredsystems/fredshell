@@ -2,5 +2,5 @@ description = "`exit abc` rejects the non-numeric argument: bash prints a diagno
 script = """
 exit abc
 """
-status = "deferred:PLAN_06"
+status = "deferred:PLAN_11"
 tags = ["builtin", "exit", "diagnostic"]

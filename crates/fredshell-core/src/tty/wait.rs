@@ -23,7 +23,7 @@
 //!
 //! - It does not own the signal handlers (those are in
 //!   [`super::signal`]).
-//! - It does not decode bytes into key events (that is `PLAN_07`).
+//! - It does not decode bytes into key events (that is `PLAN_13`).
 //! - It does not own the tty fd; both [`wait_for_event`] and
 //!   [`TtyInput`] / [`TtyOutput`] borrow it from
 //!   [`super::TerminalSession`].

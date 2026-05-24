@@ -20,7 +20,7 @@
 //! [`io::Error`]. The full job-control state machine (suspended
 //! jobs, `fg`/`bg`/`wait`/`jobs` builtins) is **not** `PLAN_04` — it
 //! lives in `fredshell-core::exec` and gets its own document
-//! (`PLAN_06`). `PLAN_04` only provides the primitives.
+//! (`PLAN_11`). `PLAN_04` only provides the primitives.
 //!
 //! This module deals exclusively with kernel process-group ids. The
 //! shell-level `Job` / `JobId` abstractions are out of scope here.

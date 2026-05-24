@@ -13,7 +13,7 @@
 //!
 //! The wrapper exists for two reasons:
 //!
-//! 1. **Ergonomics.** Builtins (`PLAN_06`) and the harness both need
+//! 1. **Ergonomics.** Builtins (`PLAN_11`) and the harness both need
 //!    a "give me an env wired for capture" helper. Centralising it
 //!    here keeps the test setup in `exec::tests` (and the future
 //!    harness crate) terse.
@@ -94,7 +94,7 @@ pub struct Captured {
     pub result: RunResult,
     /// Every byte written to [`ExecEnv::stdout`] during the run.
     /// In v0 this is bounded to the output of `spawn_via_sh` children;
-    /// `PLAN_06` routes builtin output through the same path.
+    /// `PLAN_11` routes builtin output through the same path.
     pub stdout: Vec<u8>,
     /// Every byte written to [`ExecEnv::stderr`] during the run.
     pub stderr: Vec<u8>,
@@ -149,7 +149,7 @@ mod tests {
 
     fn sandbox() -> ExecEnv {
         // The harness path that exercises `/bin/sh` will be replaced
-        // by the native executor in PLAN_06; until then the testing
+        // by the native executor in PLAN_11; until then the testing
         // module's own tests opt back into FallbackToSh so they
         // measure capture mechanics rather than strict-mode refusal.
         // Strict-mode capture is covered separately in exec::tests.

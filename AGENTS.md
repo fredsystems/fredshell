@@ -64,6 +64,26 @@ the code is a scaffold. Read the planning documents first.
   an owning task number.
 - If code exists in production, it must be reachable or intentionally gated.
 
+### Logging Policy
+
+- `println!`, `eprintln!`, `print!`, `eprint!`, and `dbg!` are FORBIDDEN in all
+  library crates and in the `fredshell` binary outside of explicit user-output paths
+  (e.g., the REPL's event-to-terminal renderer).
+- All internal logging MUST use `tracing` (spans + structured fields). Subscriber
+  installation is the binary's responsibility; library crates only emit events.
+- User-facing diagnostics are NOT log records. They surface as
+  `ShellEvent::Diagnostic` per ADR 0006 and are owned by `PLAN_10`.
+- Internal `tracing` messages are developer-facing and are NOT translated. See
+  `PLAN_21_gettext.md` for the translation boundary.
+- The full logging strategy (levels, target conventions, span shapes, test-time
+  capture) is owned by `PLAN_09_logging.md`. Until that plan is drafted, agents
+  should default to `tracing::{trace, debug, info, warn, error}` with a target
+  matching the crate name and avoid emitting structured fields whose stability
+  cannot yet be guaranteed.
+- The only permitted use of `println!` / `eprintln!` outside the binary's
+  user-output paths is in test code (`#[cfg(test)]` or `tests/`), benchmarks, and
+  `xtask`.
+
 ---
 
 ## Crate-Specific Guidance
@@ -72,11 +92,18 @@ The workspace currently contains:
 
 | Crate                   | Role                                                                       | `anyhow` allowed? |
 | ----------------------- | -------------------------------------------------------------------------- | ----------------- |
-| `fredshell`             | Binary entrypoint, CLI, line editor integration                            | Yes               |
-| `fredshell-core`        | Builtins, exec, REPL state machine, parser glue                            | No                |
+| `fredshell`             | Binary entrypoint, CLI, line editor, reference event-stream consumer       | Yes               |
+| `fredshell-core`        | Embeddable shell library: builtins, exec, state, event stream (ADR 0006)   | No                |
+| `fredshell-parser`      | Native bash parser: lexer, AST, error recovery (owned by `PLAN_11`)        | No                |
 | `fredshell-prompt`      | Starship-style prompt renderer                                             | No                |
 | `fredshell-spec-runner` | Spec harness: loads `*.case.toml`, runs against fredshell, compares output | No                |
 | `xtask`                 | Build/CI orchestration                                                     | Yes               |
+
+The `fredshell-parser` crate does not yet exist in the workspace; the row is
+reserved by `PLAN_11_parser.md` and will be created when that plan is drafted and
+its first subtask lands. Until then, parsing scaffolding lives inside
+`fredshell-core` and must be migrated out when the crate is created (same commit
+that creates the crate adds it to `Cargo.toml` workspace members).
 
 Additional crates will be added as the plan is executed. When a new crate is created,
 this table must be updated in the same commit.
@@ -86,11 +113,47 @@ this table must be updated in the same commit.
 Crates may only depend downward in the table above:
 
 - `fredshell` → may depend on any other crate.
-- `fredshell-prompt`, `fredshell-core` → may not depend on `fredshell`.
+- `fredshell-prompt`, `fredshell-core`, `fredshell-parser` → may not depend on
+  `fredshell`.
+- `fredshell-core` may depend on `fredshell-parser` (downward).
+- `fredshell-parser` may not depend on `fredshell-core` (would invert the
+  parse-then-execute layering).
 - Library crates must not depend on `xtask`.
 
 If a change requires an upward dependency, stop and discuss — it indicates a
 misplaced responsibility.
+
+### `fredshell-core` Embedding Contract
+
+`fredshell-core` is an embeddable library, not just an internal helper for the
+`fredshell` binary. The contract is fixed by ADR 0006 and implemented per
+`PLAN_10_embedding.md`. Agents touching `fredshell-core` must respect the
+following invariants:
+
+- **No fd writes from core.** The core MUST NOT write to `stdout`, `stderr`, or any
+  inherited file descriptor for shell output, diagnostics, or prompts. All such
+  output is emitted as a `ShellEvent` on the event stream. The binary's REPL is
+  the component that translates events into terminal writes.
+- **Async stream of typed events.** The core exposes its observable behaviour
+  through `impl Stream<Item = ShellEvent>`. Embedders pull events at their own
+  rate. A callback-based `ShellHost` trait was explicitly rejected by ADR 0006
+  and must not be reintroduced.
+- **Runtime-agnostic.** The core depends on `futures-core` traits (`Stream`,
+  `Future`, `AsyncRead`, `AsyncWrite`) but MUST NOT depend on `tokio`,
+  `async-std`, or `smol`. The `fredshell` binary picks `tokio`; embedders pick
+  whatever they already use.
+- **Diagnostics are events, not log records.** User-facing diagnostics surface as
+  `ShellEvent::Diagnostic`. Internal `tracing` records are developer-facing and
+  separate. See the Logging Policy section above.
+- **Child processes do not inherit the embedder's terminal directly.** When the
+  executor spawns a child, the child's stdio is connected to core-owned pipes;
+  the bytes read from those pipes surface as `Output` events. PTY allocation for
+  jobs that need a TTY is the executor's responsibility, behind the event
+  stream.
+
+If a change appears to require violating any of these invariants, stop and
+discuss. The cost of removing fd writes after Phase B lands is roughly twice the
+cost of preserving the invariant from the start.
 
 ---
 

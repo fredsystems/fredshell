@@ -5,15 +5,15 @@
 
 //! Stub parser for the v0 execution pipeline.
 //!
-//! `PLAN_06` defers all real parsing to `PLAN_06`. This module
+//! `PLAN_11` defers all real parsing to `PLAN_11`. This module
 //! exists so the public surface (`parse`, [`Script`], [`ParseError`],
 //! [`ParseErrorKind`]) is stable for `PLAN_05`'s spec harness and the
 //! binary REPL today. The v0 implementation accepts any input that
 //! does not contain a NUL byte and stores it verbatim inside the
-//! opaque [`Script`]; `PLAN_06` replaces the body with a real
+//! opaque [`Script`]; `PLAN_11` replaces the body with a real
 //! tokenizer + grammar without changing the signatures here.
 //!
-//! See `PLAN_06` §2.1 for the contract and §3 for how the stub
+//! See `PLAN_11` §2.1 for the contract and §3 for how the stub
 //! dispatcher consumes a [`Script`].
 
 use std::fmt;
@@ -22,7 +22,7 @@ use std::fmt;
 ///
 /// `Script` deliberately does not expose tokens, AST nodes, or a
 /// walker. The harness and the binary only need to be able to pass
-/// it to `run_script`; `PLAN_06` is free to replace the internal
+/// it to `run_script`; `PLAN_11` is free to replace the internal
 /// representation (currently the raw source text) without breaking
 /// either consumer.
 #[derive(Debug, Clone)]
@@ -34,7 +34,7 @@ impl Script {
     /// v0 helper: returns the source the script was parsed from.
     ///
     /// Crate-internal because external callers must not depend on
-    /// `Script` being source-shaped; `PLAN_06` removes this.
+    /// `Script` being source-shaped; `PLAN_11` removes this.
     #[must_use]
     pub(crate) fn source(&self) -> &str {
         &self.source
@@ -43,7 +43,7 @@ impl Script {
 
 /// Reason a parse attempt failed.
 ///
-/// v0 ships a single placeholder variant. `PLAN_06` replaces this
+/// v0 ships a single placeholder variant. `PLAN_11` replaces this
 /// enum with real categorical variants (`UnexpectedToken`,
 /// `UnterminatedString`, `UnterminatedHeredoc`,
 /// `InvalidParameterExpansion`, etc.). The enum is
@@ -54,7 +54,7 @@ pub enum ParseErrorKind {
     /// The v0 stub does not support some construct in the input.
     ///
     /// Today the only thing that triggers this is a NUL byte in the
-    /// source. `PLAN_06` replaces the variant set entirely.
+    /// source. `PLAN_11` replaces the variant set entirely.
     Unsupported,
 }
 
@@ -70,7 +70,7 @@ impl fmt::Display for ParseErrorKind {
 ///
 /// Carries a [`ParseErrorKind`] and a human-readable message. v0
 /// omits the byte-span field that `PLAN_02` §4.1 specifies because
-/// no caller surfaces span information yet; `PLAN_06` reintroduces
+/// no caller surfaces span information yet; `PLAN_11` reintroduces
 /// it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
@@ -101,7 +101,7 @@ impl std::error::Error for ParseError {}
 /// # Errors
 ///
 /// Returns [`ParseError`] with kind [`ParseErrorKind::Unsupported`]
-/// if `source` contains a NUL byte. `PLAN_06` replaces this body
+/// if `source` contains a NUL byte. `PLAN_11` replaces this body
 /// with a real parser and a richer error set without changing the
 /// signature.
 pub fn parse(source: &str) -> Result<Script, ParseError> {
@@ -143,7 +143,7 @@ mod tests {
     #[test]
     fn parse_accepts_arbitrary_utf8() {
         // v0 is permissive; tokens, quoting, expansion are all
-        // PLAN_06's job. The stub just round-trips the bytes.
+        // PLAN_11's job. The stub just round-trips the bytes.
         let src = "ééé \"quoted $var\" | grep 'x' && echo done";
         let s = parse(src).expect("arbitrary source parses");
         assert_eq!(s.source(), src);

@@ -6,5 +6,5 @@ else
     echo no
 fi
 """
-status = "deferred:PLAN_06"
+status = "deferred:PLAN_11"
 tags = ["control-flow", "if", "posix-overlap"]

@@ -32,7 +32,7 @@ pub enum Mode {
     ApplicationCursorKeys,
     /// Mouse-tracking VT200 normal protocol (mode `1000`). Included
     /// so the line editor can opt in if it ever wants mouse-aware
-    /// selection; current `PLAN_07` does not require it.
+    /// selection; current `PLAN_13` does not require it.
     MouseVt200,
     /// Mouse SGR encoding (mode `1006`).
     MouseSgr,

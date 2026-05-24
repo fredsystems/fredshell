@@ -1,11 +1,20 @@
-# PLAN_11 — Prompt Renderer
+# PLAN_15 — Prompt Renderer
 
-> Last updated: 2026-05-20 — first draft.
+> Last updated: 2026-05-24 — cascade renumber to insert PLAN_10
+> embedding (ADR 0006); document renamed PLAN_14 → PLAN_15. Body
+> and metadata cross-references swept (PLAN_14 → PLAN_15 self,
+> PLAN_17 → PLAN_18 AI, etc.). Substance unchanged. Note: this
+> document contains pre-existing stale "PLAN_NN (config/AI)"
+> cross-references that pre-date the work-order renumber; they
+> are NOT corrected by the cascade sweep and remain tracked as
+> a separate cleanup item.
+>
+> Previously (2026-05-20) — first draft.
 > Phase: A. Status: draft.
 > Consumes: PLAN_02 (architecture, async strategy), PLAN_03 (encoders),
-> PLAN_04 (terminal session), PLAN_07 (line editor frame integration).
-> Consumed by: PLAN_07 (frame composition), PLAN_12 (config),
-> PLAN_14 (AI segments, optional).
+> PLAN_04 (terminal session), PLAN_14 (line editor frame integration).
+> Consumed by: PLAN_14 (frame composition), PLAN_13 (config),
+> PLAN_15 (AI segments, optional).
 
 This document specifies the fredshell prompt renderer: the segment
 model, the synchronous and asynchronous evaluation paths, the
@@ -36,14 +45,14 @@ block re-render.
 - **Right-side prompt (RPS1).** Same model, drawn at the right
   margin of the first prompt row.
 - **Continuation prompt (PS2).** Drawn for multi-line buffer
-  continuations (PLAN_07 §11.3 invokes it).
+  continuations (PLAN_14 §11.3 invokes it).
 - **Transient prompt.** When a command is submitted, the prompt
   collapses to a compact form so scrollback stays clean.
 - **Configuration.** Starship-config-compatible TOML for a
   curated subset of modules (§7). fredshell-native extensions
   use namespaced keys.
 - **Frame integration.** The prompt produces a `Vec<FrameRow>`
-  consumed by PLAN_07's frame builder, not a flat ANSI string.
+  consumed by PLAN_14's frame builder, not a flat ANSI string.
   Style is per-cell (matches the editor's frame model).
 - **Refresh on background events.** Job status changes
   (`[1]+ Done ...`), async segment completion, and SIGWINCH
@@ -78,7 +87,7 @@ block re-render.
 2. **Async segments never block the prompt.** First render of an
    async segment shows the placeholder; resolution triggers a
    refresh. The prompt is drawn now, not after.
-3. **Re-render is cheap.** Diff-based via PLAN_07's frame model.
+3. **Re-render is cheap.** Diff-based via PLAN_14's frame model.
    Re-rendering the full prompt every keystroke is acceptable
    only because the frame diff makes the byte cost trivial.
 4. **No user code on the hot path.** Configuration is data, not
@@ -88,7 +97,7 @@ block re-render.
    invalidation rule. No "magic" memoization. A stale prompt is
    worse than a slow prompt.
 6. **Correctness on resize.** SIGWINCH triggers a re-render that
-   produces a new frame; PLAN_07 owns the redraw mechanics.
+   produces a new frame; PLAN_14 owns the redraw mechanics.
    The prompt must be reconstructable from `PromptContext` alone.
 
 ## 3. Module layout
@@ -119,7 +128,7 @@ crates/fredshell-prompt/src/
     time.rs           — current time with format
     shell_level.rs    — SHLVL indicator
     container.rs      — docker / podman / nix-shell marker
-    ai_hint.rs        — optional, gated by PLAN_14 feature flag
+    ai_hint.rs        — optional, gated by PLAN_15 feature flag
   render/
     mod.rs            — segment list → Vec<FrameRow>
     layout.rs         — left/right alignment, separators
@@ -128,7 +137,7 @@ crates/fredshell-prompt/src/
 
 The crate stays in the same dependency position as the scaffold
 (`fredshell-prompt` depends on `fredshell-core` and `fredshell-ansi`,
-nothing depends on it except the binary and PLAN_07's frame
+nothing depends on it except the binary and PLAN_14's frame
 builder consumes its output via a typed return value).
 
 ## 4. Public surface
@@ -161,7 +170,7 @@ pub struct PromptOutput {
     pub left: Vec<FrameRow>,
     pub right: Option<Vec<FrameRow>>,
     /// Columns occupied by the prompt on the first visual row.
-    /// Fed into PLAN_07's WrapContext.first_line_indent.
+    /// Fed into PLAN_14's WrapContext.first_line_indent.
     pub first_line_indent: u16,
     /// Continuation indent for subsequent visual rows of the
     /// command's row 0 (typically zero; non-zero if PS2-style
@@ -250,7 +259,7 @@ pub struct SegmentBody {
 
 The trait is closed in practice: the only `impl Segment` types
 live in `crates/fredshell-prompt/src/modules/`. The `Custom`
-variant exists to allow PLAN_14's AI hint segment to live in a
+variant exists to allow PLAN_15's AI hint segment to live in a
 feature-gated module without being part of `SegmentKind`'s
 exhaustive match in the core registry; it is not user-extensible.
 
@@ -317,8 +326,8 @@ The binary creates a `tokio::runtime::Builder::new_current_thread`
 runtime at startup. The runtime handle is passed to:
 
 - `PromptRenderer` (this crate).
-- `CompletionEngine` if PLAN_07/PLAN_06 elects async completion.
-- `AiClient` if PLAN_14 is enabled.
+- `CompletionEngine` if PLAN_14/PLAN_06 elects async completion.
+- `AiClient` if PLAN_15 is enabled.
 
 `fredshell-core` does not see the runtime. The synchronous
 executor blocks on real syscalls; it never enters the runtime.
@@ -343,7 +352,7 @@ placeholder, future }`.
    `PromptState::in_flight`, keyed by segment id.
 4. Emitting `placeholder` into the current frame.
 
-The line editor calls `poll_async` between keystrokes (PLAN_07's
+The line editor calls `poll_async` between keystrokes (PLAN_14's
 event loop has a natural quiescent point after each keystroke
 is fully processed). `poll_async`:
 
@@ -377,7 +386,7 @@ future at the segment level.
 
 ### 6.4. Refresh between keystrokes
 
-The line editor's main loop (PLAN_07 §11) shape:
+The line editor's main loop (PLAN_14 §11) shape:
 
 ```text
 loop {
@@ -480,7 +489,7 @@ risk because it does not eval anything.
 
 ### 7.4. Layered configuration
 
-PLAN_12 owns the configuration loader. Prompt config is one
+PLAN_13 owns the configuration loader. Prompt config is one
 layer of the broader fredshell config, loaded from:
 
 1. `$XDG_CONFIG_HOME/fredshell/prompt.toml` (fredshell-native).
@@ -498,10 +507,10 @@ on other machines can flip the bit.
 `render` returns `PromptOutput` (§4). The `left` field is a
 `Vec<FrameRow>`, typically of length 1 (most prompts are
 single-line) but may be longer (multi-line prompts are
-supported). Each `FrameRow` is `Vec<FrameCell>` matching PLAN_07's
+supported). Each `FrameRow` is `Vec<FrameCell>` matching PLAN_14's
 frame model exactly: same cell type, same style representation.
 
-PLAN_07's frame builder concatenates prompt rows, buffer rows,
+PLAN_14's frame builder concatenates prompt rows, buffer rows,
 and menu rows into the final frame. There is no string-based
 intermediate; the prompt produces cells, the editor produces
 cells, the diff layer compares cells.
@@ -509,11 +518,11 @@ cells, the diff layer compares cells.
 ### 8.2. First-line indent and continuation indent
 
 The prompt computes `first_line_indent` as the visual width
-(cells, not bytes) of the last row of the prompt. PLAN_07 uses
+(cells, not bytes) of the last row of the prompt. PLAN_14 uses
 this when wrapping the buffer's first logical row.
 
 `continuation_indent` is configurable; default 0. If a user sets
-it (e.g., to 2 for visual indent on wrapped lines), PLAN_07's
+it (e.g., to 2 for visual indent on wrapped lines), PLAN_14's
 wrap module applies it to non-first visual slices of row 0.
 
 ### 8.3. Right prompt
@@ -525,7 +534,7 @@ width`. Truncation rules are starship-compatible: right prompt
 disappears under pressure, left prompt truncates segments
 according to per-segment rules.
 
-Right-prompt cells go into PLAN_07's frame at the appropriate
+Right-prompt cells go into PLAN_14's frame at the appropriate
 column; they do not produce a separate row.
 
 ### 8.4. Transient prompt
@@ -537,7 +546,7 @@ multi-line with status info) to a compact form for clean
 scrollback. The mechanism is a redraw of the prompt row only;
 buffer rows are unchanged.
 
-PLAN_07's submission path is responsible for triggering the
+PLAN_14's submission path is responsible for triggering the
 transient redraw before yielding to the executor.
 
 ## 9. Caching semantics
@@ -594,7 +603,7 @@ Within those:
 
 The hot path (re-render with no segment change) must produce
 zero allocations. Cells are written into a reusable `Vec<FrameCell>`
-buffer owned by `PromptState`. The frame returned to PLAN_07
+buffer owned by `PromptState`. The frame returned to PLAN_14
 is a view over that buffer (cloned only at the editor's frame
 boundary, not on every keystroke).
 
@@ -633,20 +642,20 @@ Replace `fredshell-prompt::render` (current scaffold returning a
 `String` from nu-ansi-term) with a sync-only `PromptRenderer`
 that returns `Vec<FrameRow>` for two segments: `Directory` and
 `Character`. Removes the `nu-ansi-term` workspace dep. Wire
-into the binary; PLAN_07's Phase 0 cooked-mode scaffold consumes
+into the binary; PLAN_14's Phase 0 cooked-mode scaffold consumes
 the new output.
 
 ### 11.2. Phase 1 — Sync segments (weeks 2–4)
 
 All sync segments per §5.2. Configuration loader (§7) for the
 sync subset. Format-string expansion. Per-segment caches. Right
-prompt. PLAN_07 frame integration. Benchmarks against budget.
+prompt. PLAN_14 frame integration. Benchmarks against budget.
 
 ### 11.3. Phase 2 — Async runtime, GitStatus (weeks 5–8)
 
 Tokio runtime in the binary; runtime handle threaded into
 `PromptRenderer`. `GitStatus` segment as the first async
-consumer. `poll_async` wired into PLAN_07's main loop via
+consumer. `poll_async` wired into PLAN_14's main loop via
 eventfd. Cancellation and timeout. Drop-on-cwd-change.
 
 ### 11.4. Phase 3 — Transient, continuation, polish (weeks 9–12)
@@ -655,7 +664,7 @@ Transient prompt. Continuation prompt. Container detection.
 Venv detection. Time / shell level. Starship-config
 compatibility shim. Documentation of the full schema.
 
-### 11.5. Phase 4 — AI hint segment (deferred to PLAN_14)
+### 11.5. Phase 4 — AI hint segment (deferred to PLAN_15)
 
 Optional. Lives behind a feature flag. Same async-segment
 plumbing as `GitStatus`.
@@ -677,7 +686,7 @@ Rejected for three reasons:
    thing in safe Rust. Tokio futures are dropped, and the
    underlying I/O is cancelled by the runtime where possible.
 3. **Ecosystem alignment.** `gix` exposes async operations.
-   HTTP clients (PLAN_14) are async-first. Standardizing on
+   HTTP clients (PLAN_15) are async-first. Standardizing on
    tokio for I/O-bound work in the binary keeps the surface
    uniform.
 
@@ -695,8 +704,8 @@ startup (~10 ms on Linux, more on macOS). That blows the budget
 by itself. Re-renders on every keystroke (for live-updating
 content) are infeasible. Caching starship's output works for
 static prompts only; dynamic-status updates regress to "blink
-out, blink in." Worse, starship cannot integrate with PLAN_07's
-frame model — it produces ANSI strings that PLAN_07 would have
+out, blink in." Worse, starship cannot integrate with PLAN_14's
+frame model — it produces ANSI strings that PLAN_14 would have
 to parse to extract style. Cell-level integration is non-
 negotiable for the diff-based redraw.
 
@@ -722,17 +731,17 @@ useful prompt segments is finite; we add them.
 
 ### 12.4. ANSI-string output instead of `Vec<FrameRow>`
 
-The current scaffold returns `String`. PLAN_07's frame model is
+The current scaffold returns `String`. PLAN_14's frame model is
 cell-based.
 
 Rejected (i.e., the scaffold is replaced in Phase 0). Returning
-a string forces PLAN_07 to either re-parse the ANSI escapes (to
+a string forces PLAN_14 to either re-parse the ANSI escapes (to
 recover style for diff) or to treat the prompt as opaque (no
 diff for prompt rows). Neither is acceptable.
 
 Cell-based output costs the prompt crate one dependency on
-PLAN_07's frame types. That dependency is via `fredshell-core`
-(where the frame types live, per PLAN_07 §3), which the prompt
+PLAN_14's frame types. That dependency is via `fredshell-core`
+(where the frame types live, per PLAN_14 §3), which the prompt
 already depends on.
 
 ### 12.5. Filesystem watchers for git status
@@ -798,17 +807,17 @@ justification) applies to every prompt benchmark.
   right prompt go? Options: stay on row 0 (visible only above
   the wrap), follow the cursor (re-render every wrap change),
   hide. Lean toward "stay on row 0" with hide-on-overlap.
-  Decided when implementing PLAN_07's wrap integration.
+  Decided when implementing PLAN_14's wrap integration.
 - **Transient prompt and history search.** When the user enters
   Ctrl-R history search, does the prompt go transient? Probably
   yes (the search overlay obscures the prompt anyway). Decided
-  with PLAN_07 §8.5.
+  with PLAN_14 §8.5.
 - **Starship-config fidelity.** How close to bug-for-bug? V1
   supports the schema for the listed modules. Edge cases of
   starship's format string (recursion, escape sequences) are
   matched best-effort; users with deep starship configs may
   see divergence. We document this rather than chasing parity.
-- **AI hint placement.** The AI hint segment (PLAN_14) wants
+- **AI hint placement.** The AI hint segment (PLAN_15) wants
   to render under the prompt as a separate row, not within the
   prompt row. The frame model accommodates this (the prompt
   emits multiple `FrameRow`s); the config schema needs a
@@ -819,19 +828,19 @@ justification) applies to every prompt benchmark.
 
 - **PLAN_02** commits the architecture: tokio runtime in the
   binary, sync core, prompt is the canonical async-at-the-edge
-  example. PLAN_11 implements that commitment.
+  example. PLAN_15 implements that commitment.
 - **PLAN_03** provides `Sgr` and the encoders the renderer's
-  output eventually flows through (via PLAN_07's diff layer).
+  output eventually flows through (via PLAN_14's diff layer).
 - **PLAN_04** owns the terminal width fed into `PromptContext`,
   the SIGWINCH path that triggers re-render, and the self-pipe
   that delivers async-progress wakeups to the main loop.
-- **PLAN_07** owns the frame model the prompt emits into, the
+- **PLAN_14** owns the frame model the prompt emits into, the
   redraw mechanics, the wrap context that consumes
   `first_line_indent`, and the main-loop integration that calls
   `poll_async` between keystrokes.
 - **PLAN_06** (completion) shares the tokio runtime if it
   elects async. Independent decision.
-- **PLAN_12** (config) owns the loader; PLAN_11 contributes the
+- **PLAN_13** (config) owns the loader; PLAN_15 contributes the
   prompt-specific schema.
-- **PLAN_14** (AI) contributes an optional segment. Same async
+- **PLAN_15** (AI) contributes an optional segment. Same async
   plumbing.

@@ -1,7 +1,16 @@
 # PLAN_02 — Architecture
 
-> Last updated: 2026-05-21 — §12 refreshed for PLAN_06 (Phase A
-> execution-pipeline skeleton implemented; §4.1/§4.2/§4.3/§4.5
+> Last updated: 2026-05-24 — cascade renumber to insert PLAN_10
+> embedding (ADR 0006): old PLAN_10..20 → new PLAN_11..21. References
+> block: PLAN_13 (line editor) → PLAN_14; PLAN_12 (traps) → PLAN_13;
+> PLAN_14 (prompt) → PLAN_15; PLAN_17 (AI) → PLAN_18. Substance
+> unchanged.
+>
+> Previously (2026-05-24): cross-references remapped for the
+> work-order renumber (old PLAN_06 Phase B → PLAN_11; old PLAN_08/09/10
+> spec/fuzz/jobs → PLAN_07/08/12; old PLAN_11/12/13/14/15 prompt/config/
+> nix/AI/milestones → PLAN_14/15/16/17/18). §12 refreshed for PLAN_06
+> (Phase A execution-pipeline skeleton implemented; §4.1/§4.2/§4.3/§4.5
 > surfaces and §9 bench scaffolding moved to Implemented).
 > Phase: A. Status: draft.
 
@@ -376,7 +385,7 @@ Build `fredshell-line-editor` as a first-party crate.
 
 Pros: full control over the redraw model, keystroke latency, kitty
 keyboard support, and the interaction with `fredshell-ansi` and the
-prompt; no impedance mismatch with PLAN_04 (terminal I/O) and PLAN_07
+prompt; no impedance mismatch with PLAN_04 (terminal I/O) and PLAN_14
 (interactive UX).
 
 Cons: significantly more code to write and to test (the L4 PTY layer
@@ -386,7 +395,7 @@ will need to be richer); the line editor is a known hazard area
 ### Provisional decision
 
 **Option B** — roll our own — is the provisional direction, gated on
-PLAN_07 confirming it. The reasoning:
+PLAN_14 confirming it. The reasoning:
 
 - The keystroke latency budget (<1ms) is tight. Owning the redraw
   model lets us bound it.
@@ -396,7 +405,7 @@ PLAN_07 confirming it. The reasoning:
 - The reedline scaffold-dependency in `Cargo.toml` is from
   bootstrapping and is removed before milestone 1 if Option B holds.
 
-PLAN_07 will record the final decision. Until then, `fredshell-line-
+PLAN_14 will record the final decision. Until then, `fredshell-line-
 editor` is reserved as a crate name in this document but does not yet
 exist in `crates/`.
 
@@ -404,17 +413,17 @@ exist in `crates/`.
 
 The core is synchronous Rust. Async appears in three places:
 
-1. **Prompt async segments.** PLAN_11 owns the model. Likely:
+1. **Prompt async segments.** PLAN_15 owns the model. Likely:
    `tokio` single-threaded runtime owned by the binary, prompt
    segments are futures, slow segments render placeholders and resolve
    asynchronously between keystrokes. The runtime is created in the
    binary and threaded into the prompt crate. The core never sees it.
-2. **AI features.** PLAN_14 owns this. Same runtime as the prompt;
+2. **AI features.** PLAN_18 owns this. Same runtime as the prompt;
    AI providers expose async client APIs. The core does not depend on
    the runtime; the binary mediates between the runtime and the core.
 3. **Background completion.** Possibly. Completion can fan out to
    tools (`git`, `cargo`) that take measurable time. If completion
-   becomes async, the runtime is the same one as above. PLAN_07
+   becomes async, the runtime is the same one as above. PLAN_14
    decides.
 
 Notable non-uses of async:
@@ -534,7 +543,7 @@ without spawning real children.
 | Builtin cancellation          | `AtomicBool` in `Tier2Ctx`               | core API        |
 | Timeouts                      | `setitimer` + `SIGALRM`                  | exec            |
 | Pipeline stuck producer       | `poll`-driven fd loop                    | exec::pipeline  |
-| `git fetch` hangs prompt      | Prompt async segment + tokio (in binary) | PLAN_11, binary |
+| `git fetch` hangs prompt      | Prompt async segment + tokio (in binary) | PLAN_15, binary |
 
 Nothing in this list requires an async runtime. The shell stays
 responsive because POSIX signals and `pselect`/`poll` exist and are
@@ -611,21 +620,21 @@ budget. Regressions >15% require justification per AGENTS.md.
 These belong to other docs and are not re-litigated here:
 
 - The actual bash grammar coverage and parser strategy (PLAN_06
-  Phase B; per-feature spec sheets in PLAN_08).
-- The line-editor design details (PLAN_07).
-- The prompt segment protocol (PLAN_11).
+  Phase B; per-feature spec sheets in PLAN_07).
+- The line-editor design details (PLAN_14).
+- The prompt segment protocol (PLAN_15).
 - The terminal I/O machinery — raw mode, signals, process groups,
   feature detection (PLAN_04).
 - The ANSI encoder API surface (PLAN_03).
-- The config file format (PLAN_12).
-- The Nix module surface (PLAN_13).
-- The AI feature provider abstraction (PLAN_14).
-- The tier-2 builtin inventory and priority order (PLAN_06 Phase B;
-  per-builtin spec sheets in PLAN_08).
+- The config file format (PLAN_16).
+- The Nix module surface (PLAN_17).
+- The AI feature provider abstraction (PLAN_18).
+- The tier-2 builtin inventory and priority order (PLAN_12;
+  per-builtin spec sheets in PLAN_07).
 - Job control (`trap`, `wait`, `kill`, `jobs`, `fg`, `bg`, `disown`,
-  `suspend`) and signal-disposition tables (PLAN_10).
-- The differential harness, fuzzer, and sandbox hardening (PLAN_09).
-- The milestone schedule (PLAN_15, Phase B).
+  `suspend`) and signal-disposition tables (PLAN_13).
+- The differential harness, fuzzer, and sandbox hardening (PLAN_08).
+- The milestone schedule (PLAN_19, Phase B).
 
 ## 11. Open questions
 
@@ -634,8 +643,8 @@ These belong to other docs and are not re-litigated here:
   parser standalone.
 - **Async runtime choice (tokio vs smol).** Default: `tokio` with the
   `rt` feature only (no `rt-multi-thread` unless a concrete need
-  surfaces). PLAN_11 / PLAN_14 confirm.
-- **Line editor: reedline vs own.** Provisional: own. PLAN_07 confirms.
+  surfaces). PLAN_15 / PLAN_18 confirm.
+- **Line editor: reedline vs own.** Provisional: own. PLAN_14 confirms.
 - **`fredshell-ansi` as a dependency of `fredshell-core`.** Tier-2
   builtins benefit from styled output, but pulling ANSI into the
   core makes the boundary slightly less clean. Alternative: tier-2
@@ -674,28 +683,28 @@ PLAN_NN document flips status.
   `Script`, `ParseError`, `ParseErrorKind` exist as a stub: the v0
   parser stores the source string verbatim and rejects NUL bytes.
   Real tokenisation, AST, and `ParseErrorKind` variants land with
-  PLAN_06 Phase B.
+  PLAN_12.
 - **§4.2 `ExecEnv`** (PLAN_06 Phase A — surface only). `ExecEnv` exists
   with `from_process` and `sandboxed` constructors and v0 fields
   (`cwd`, `env: HashMap<String, String>`, `last_status`). Full
   `ShellState` fields and the Tier-2 builtin registry land with
-  PLAN_06 Phase B.
+  PLAN_12.
 - **§4.3 Executor surface** (PLAN_06 Phase A — surface only).
   `run_source`, `run_script`, `RunResult { status, exit_requested }`,
   `RunError`, `ExecError`, `ExitStatus` exist. The v0 dispatcher walks
   lines, routes Tier-1 builtins through `builtins::try_run`, and falls
   back to `/bin/sh -c <line>` for everything else. Real executor lands
-  with PLAN_06 Phase B.
+  with PLAN_12.
 - **§4.5 Tier-2 trait surface** (PLAN_06 Phase A — surface only).
   `Tier2Builtin` (object-safe, `Send + Sync`), `Tier2Ctx<'a>`, and
   `Tier2Error` exist with a compile-time object-safety check. No
-  impls; no registry; dispatch lands with PLAN_06 Phase B.
+  impls; no registry; dispatch lands with PLAN_12.
 - **§9 Bench scaffolding** (PLAN_06 Phase A — surface only).
   `crates/fredshell-core/benches/exec_roundtrip.rs` exists with
   `parse_only` and `parse_and_exec` Criterion benches, seeding the
   performance budget tracker. Baseline numbers recorded in
   PLAN_06 §11 row 06a.7. Real budget enforcement lands with
-  PLAN_06 Phase B.
+  PLAN_12.
 - **`fredshell`** (binary, scaffold). Wires `TerminalSession` and
   the REPL; installs `SIGQUIT=SIG_IGN`. Argv / one-shot mode work.
 - **`fredshell-spec-runner`** (PLAN_05 — implemented). Library +
@@ -716,42 +725,42 @@ PLAN_NN document flips status.
 
 - **§4.1 Parser semantics**. The v0 parser does not tokenise; it
   stores the source string verbatim. Real lexer, AST, and
-  POSIX-grammar coverage land with PLAN_06 Phase B.
+  POSIX-grammar coverage land with PLAN_12.
 - **§4.2 `ExecEnv` semantics**. `ExecEnv` does not yet carry
   functions, aliases, shell options, or a job table. `ShellState`
-  lands with PLAN_06 Phase B; the job-control slice on top of it
-  is owned by PLAN_10.
+  lands with PLAN_12; the job-control slice on top of it
+  is owned by PLAN_13.
 - **§4.3 Executor semantics**. The v0 dispatcher delegates external
   commands to `/bin/sh -c`. Real fork/exec, pipelines, and
-  redirections land with PLAN_06 Phase B; job control lands with
-  PLAN_10.
+  redirections land with PLAN_12; job control lands with
+  PLAN_13.
 - **§4.4 Tier-1 builtins**. Only `cd`, `exit`, and a few stubs exist
   in `fredshell-core::builtins`. The full Tier-1 set lands
-  incrementally across PLAN_06 Phase B (per the §11.1 inventory in
+  incrementally across PLAN_12 (per the §11.1 inventory in
   PLAN_05_testing); job-control-related builtins (`trap`, `wait`,
   `kill`, `jobs`, `fg`, `bg`, `disown`, `suspend`) are owned by
-  PLAN_10.
+  PLAN_13.
 - **§4.5 Tier-2 builtin impls**. The trait exists; no builtins
-  implement it yet. Per-builtin specifications live in PLAN_08
-  sheets; inventory and dispatch land with PLAN_06 Phase B.
+  implement it yet. Per-builtin specifications live in PLAN_07
+  sheets; inventory and dispatch land with PLAN_12.
 - **§4.6 Dispatch order**. Today's `dispatch_line` does
   builtin-then-fallback-to-/bin/sh. The full alias → function →
-  tier-1 → tier-2 → external order lands with PLAN_06 Phase B.
+  tier-1 → tier-2 → external order lands with PLAN_12.
 - **§6.1.4 Timeouts** (`setitimer` + `SIGALRM`). PLAN_04 catches
   `SIGALRM` and sets the cancellation flag; no `setitimer` wiring
-  exists. Wired by PLAN_10 when `read -t` / `timeout` land.
+  exists. Wired by PLAN_13 when `read -t` / `timeout` land.
 - **§6.1.5 Pipeline `poll` loop**. No pipeline executor exists.
-  Lands with PLAN_06 Phase B.
+  Lands with PLAN_12.
 - **§8 `ShellState`** (vars, functions, aliases, opts). Not
-  implemented. Lands with PLAN_06 Phase B; the `jobs` slot is
-  filled in by PLAN_10.
+  implemented. Lands with PLAN_12; the `jobs` slot is
+  filled in by PLAN_13.
 - **§9 Performance budget enforcement**. Bench scaffolding exists
   (06a.7) but budgets are not enforced. Enforcement lands with
-  PLAN_06 Phase B.
+  PLAN_12.
 
 ### Deferred
 
-- **`fredshell-line-editor`** crate — waits for PLAN_07.
+- **`fredshell-line-editor`** crate — waits for PLAN_14.
 - **§3.1 `cargo xtask check-deps` lint** — not implemented. Dep
   direction is enforced by convention today. Added when a violation
   is attempted or before milestone 1.
@@ -764,7 +773,7 @@ PLAN_NN document flips status.
   from the app layer" alternative is dropped.
 - **`OsString` vs `String`.** Resolved by PLAN_06 Phase A: the
   skeleton uses `String` for v0 (test ergonomics, no real env-var
-  handling yet). PLAN_06 Phase B promotes to `OsString` when real env
+  handling yet). PLAN_12 promotes to `OsString` when real env
   handling lands. Recorded as a known migration cost in PLAN_06 §7.
 - **Parser as separate crate.** Resolved by PLAN_06 Phase A:
   internal module of `fredshell-core`. Revisit only if a third-party
@@ -789,18 +798,17 @@ PLAN_NN document flips status.
 - `Documents/PLAN_06_exec.md` — execution pipeline (Phase A
   skeleton implemented; Phase B parser, executor, full builtin set,
   and Tier-2 inventory not yet drafted).
-- `Documents/PLAN_07_line_editor.md` (pending) — line editor
-  design, finalizes Option A/B.
-- `Documents/PLAN_08_spec_drafting.md` (pending) — per-builtin and
-  per-feature spec sheets; gates PLAN_06 Phase B work.
-- `Documents/PLAN_09_fuzzer_and_differential.md` (pending) —
-  differential harness, fuzzer, sandbox hardening, bash testsuite
-  import.
-- `Documents/PLAN_10_traps_and_jobs.md` (pending) — signal disposition
+- `Documents/PLAN_14_line_editor.md` — line editor design,
+  finalizes Option A/B.
+- `Documents/PLAN_07_spec_drafting.md` — per-builtin and
+  per-feature spec sheets; gates PLAN_12 (exec Phase B) work.
+- `Documents/PLAN_08_fuzzer.md` — differential harness, fuzzer,
+  sandbox hardening, bash testsuite import.
+- `Documents/PLAN_13_traps_and_jobs.md` — signal disposition
   (`trap`), job control (`jobs`, `fg`, `bg`, `wait`, `kill`),
   `setitimer` wiring.
-- `Documents/PLAN_11_prompt.md` (pending) — prompt segment protocol
+- `Documents/PLAN_15_prompt.md` — prompt segment protocol
   and async runtime usage.
-- `Documents/PLAN_14_ai_features.md` (pending) — AI runtime usage.
+- `Documents/PLAN_18_ai_features.md` (pending) — AI runtime usage.
 - `AGENTS.md` — dependency direction rules, panic-free production,
   typed errors.

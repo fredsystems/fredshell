@@ -114,7 +114,7 @@ pub fn run_case(case: &Case) -> Result<CaseResult, SpecError> {
     // The v0 ExecEnv env map is keyed by String. If the host's
     // TMPDIR is non-UTF-8, the harness cannot represent the sandbox
     // path inside the executor's environment, which would silently
-    // corrupt $SANDBOX-substituted values. `PLAN_06` migrates env to
+    // corrupt $SANDBOX-substituted values. `PLAN_11` migrates env to
     // OsString and removes this guard.
     if !sandbox.root_is_utf8() {
         return Err(SpecError::Sandbox {

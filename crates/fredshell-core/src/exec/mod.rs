@@ -5,10 +5,10 @@
 
 //! Command execution: stub `run_source` / `run_script` dispatcher.
 //!
-//! v0 implements the public entry points specified by `PLAN_06` §2.3
+//! v0 implements the public entry points specified by `PLAN_11` §2.3
 //! by walking [`Script::source`] line by line and shelling out to
 //! `/bin/sh -c` for any non-builtin line (§3). The real parser and
-//! executor land with `PLAN_06`; this module exists so `PLAN_05`'s
+//! executor land with `PLAN_11`; this module exists so `PLAN_05`'s
 //! spec harness and the binary REPL can share one code path today.
 //!
 //! ## Module layout
@@ -22,7 +22,7 @@
 //!   for the `PLAN_05` spec harness. Gated to `#[cfg(test)]` until
 //!   the harness crate (05.4) promotes it behind a cargo feature.
 //!
-//! See `PLAN_06` §3 for the stub dispatcher's contract and `PLAN_05`
+//! See `PLAN_11` §3 for the stub dispatcher's contract and `PLAN_05`
 //! §5.2 for the stdio plumbing it routes through.
 
 pub mod builtin;
@@ -99,7 +99,7 @@ pub fn run_source(source: &str, env: &mut ExecEnv) -> Result<RunResult, RunError
 /// (e.g. to validate before recording in history). The harness uses
 /// [`run_source`] instead.
 ///
-/// v0 implementation per `PLAN_06` §3: walks `script.source` line
+/// v0 implementation per `PLAN_11` §3: walks `script.source` line
 /// by line, dispatches each non-empty line to the builtin path or to
 /// `/bin/sh -c`. The exit status of the last executed line becomes
 /// [`RunResult::status`]; an `exit` builtin short-circuits with its
@@ -177,7 +177,7 @@ fn dispatch_line(line: &str, env: &mut ExecEnv) -> Result<LineOutcome, RunError>
             // FallbackToSh mode v0 hands it straight to `/bin/sh`
             // so its error reporting is authoritative; in Strict
             // mode the executor refuses with UnparsableArgv.
-            // PLAN_06 reports the parse failure via ParseError
+            // PLAN_11 reports the parse failure via ParseError
             // and the carve-out goes away.
             return match env.external_command_policy {
                 ExternalCommandPolicy::FallbackToSh => {
@@ -213,9 +213,9 @@ fn dispatch_line(line: &str, env: &mut ExecEnv) -> Result<LineOutcome, RunError>
 ///
 /// v0 always pipes — even when the writers point at process stdio —
 /// so the dispatcher has a single code path. The cost is one extra
-/// copy per command, which `PLAN_06` removes by handing the child
+/// copy per command, which `PLAN_11` removes by handing the child
 /// inherited file descriptors when the writers are known to be the
-/// real stdio. See `PLAN_05` §5.2 and `PLAN_06` §9 for the budget.
+/// real stdio. See `PLAN_05` §5.2 and `PLAN_11` §9 for the budget.
 fn spawn_via_sh(line: &str, env: &mut ExecEnv) -> Result<ExitStatus, RunError> {
     let mut cmd = Command::new("/bin/sh");
     cmd.arg("-c")
@@ -244,7 +244,7 @@ fn spawn_via_sh(line: &str, env: &mut ExecEnv) -> Result<ExitStatus, RunError> {
 /// [`ExecError`] for the run-pipeline envelope.
 ///
 /// Today no builtin actually produces a [`CoreError`] (the variants
-/// are reserved for `PLAN_07`+ builtins); the match exists so a future
+/// are reserved for `PLAN_13`+ builtins); the match exists so a future
 /// surface change does not silently lose information.
 fn core_error_to_exec(err: CoreError) -> ExecError {
     match err {
