@@ -46,7 +46,7 @@ cargo_common_metadata = "allow"   # Metadata is inherited from the workspace.
 
 [workspace.dependencies]
 # CLI / errors / logging
-anyhow = "=1.0.102"
+anyhow = "=1.0.103"
 clap = { version = "=4.6.1", features = ["derive"] }
 clap-verbosity-flag = "=3.0.4"
 color-eyre = "=0.6.5"
