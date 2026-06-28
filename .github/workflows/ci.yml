@@ -53,6 +53,12 @@ jobs:
         with:
           toolchain: ${{ matrix.toolchain }}
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+      # `cargo xtask check` invokes `cargo-machete` as part of the
+      # mandatory verification suite. The bare runner has no nix
+      # devShell, so install it explicitly here.
+      - uses: taiki-e/install-action@bffeee26d4db9be238a4ea78d8826604ebcb594d # v2.82.5
+        with:
+          tool: cargo-machete
       - run: cargo xtask check
 
   compat:
