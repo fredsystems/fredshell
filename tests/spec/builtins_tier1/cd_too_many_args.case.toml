@@ -1,0 +1,6 @@
+description = "`cd a b` with too many arguments fails with exit status 2"
+script = """
+cd a b
+"""
+status = "deferred:PLAN_12"
+tags = ["builtin", "cd", "diagnostic"]

@@ -1,0 +1,10 @@
+description = "`cd` resolves a target through CDPATH when it is not found relative to $PWD"
+script = """
+cd target >/dev/null
+echo "${PWD##*/}"
+"""
+status = "deferred:PLAN_12"
+tags = ["builtin", "cd"]
+
+[env.extra]
+CDPATH = "$SANDBOX/base"

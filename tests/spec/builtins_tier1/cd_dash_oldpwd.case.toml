@@ -1,0 +1,9 @@
+description = "`cd -` changes back to $OLDPWD"
+script = """
+cd a
+cd ../b
+cd - >/dev/null
+echo "${PWD##*/}"
+"""
+status = "deferred:PLAN_12"
+tags = ["builtin", "cd"]

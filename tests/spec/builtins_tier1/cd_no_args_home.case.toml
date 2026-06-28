@@ -1,0 +1,10 @@
+description = "`cd` with no arguments changes to $HOME"
+script = """
+cd
+[ "$PWD" = "$HOME" ] && echo at_home
+"""
+status = "deferred:PLAN_12"
+tags = ["builtin", "cd"]
+
+[env]
+HOME = "$SANDBOX"
