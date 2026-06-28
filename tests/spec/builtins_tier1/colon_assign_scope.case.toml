@@ -1,0 +1,8 @@
+description = "`var=value :` assignments do not persist into the shell environment in default mode"
+script = """
+foo=baseline
+foo=bar :
+echo "after=[$foo]"
+"""
+status = "deferred:PLAN_12"
+tags = ["builtin", "colon"]

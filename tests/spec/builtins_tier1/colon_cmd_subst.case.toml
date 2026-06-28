@@ -1,0 +1,7 @@
+description = "`: \"$(cmd)\"` runs command substitution in its arguments for the side effect"
+script = """
+: "$(echo ran > marker)"
+echo "marker=[$(<marker)]"
+"""
+status = "deferred:PLAN_12"
+tags = ["builtin", "colon"]

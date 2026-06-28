@@ -1,0 +1,7 @@
+description = "`:` returns exit status 0"
+script = """
+:
+echo "exit=$?"
+"""
+status = "deferred:PLAN_12"
+tags = ["builtin", "colon"]
