@@ -402,6 +402,58 @@ mod tests {
         crate::tty::test_pty::FakePty::open()
     }
 
+    /// Drain the master side until `needle` appears in the accumulated
+    /// echo, or a bounded number of reads elapse.
+    ///
+    /// PTY echo is produced by the kernel tty layer asynchronously, so
+    /// a multi-byte echo sequence (e.g. `"hi\r\n"`, `"^C\r\n"`,
+    /// `"\b \b"`) is not guaranteed to arrive in a single `read(2)`.
+    /// A single read can return a partial sequence under scheduler /
+    /// load pressure, which is exactly the race that made these tests
+    /// flaky on CI while passing locally. Reading in a loop until the
+    /// full needle is observed removes that timing dependence.
+    ///
+    /// The read end is set non-blocking with a bounded retry budget so
+    /// a genuine failure (the bytes never arrive) surfaces as a failed
+    /// assertion in the caller rather than hanging the suite forever.
+    fn read_until_contains(master: &mut std::fs::File, needle: &[u8]) -> Vec<u8> {
+        use std::os::fd::AsRawFd;
+
+        // Set O_NONBLOCK so a read that outpaces the kernel echo
+        // returns EWOULDBLOCK instead of blocking indefinitely.
+        // SAFETY: fcntl on a valid owned fd; flags are read then
+        // updated. Errors are surfaced via the assertion below.
+        let fd = master.as_raw_fd();
+        unsafe {
+            let flags = libc::fcntl(fd, libc::F_GETFL);
+            assert!(flags >= 0, "fcntl(F_GETFL) failed");
+            let rc = libc::fcntl(fd, libc::F_SETFL, flags | libc::O_NONBLOCK);
+            assert!(rc == 0, "fcntl(F_SETFL, O_NONBLOCK) failed");
+        }
+
+        let mut acc = Vec::new();
+        // ~500 ms total budget at 1 ms per spin: ample for kernel echo
+        // even on a heavily loaded CI runner, bounded so the test
+        // fails loudly rather than hanging if the bytes never come.
+        for _ in 0..500 {
+            let mut buf = [0u8; 64];
+            match master.read(&mut buf) {
+                Ok(0) => break,
+                Ok(n) => {
+                    acc.extend_from_slice(&buf[..n]);
+                    if acc.windows(needle.len()).any(|w| w == needle) {
+                        return acc;
+                    }
+                }
+                Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                    std::thread::sleep(std::time::Duration::from_millis(1));
+                }
+                Err(e) => panic!("read on pty master failed: {e}"),
+            }
+        }
+        acc
+    }
+
     #[test]
     fn pump_input_once_echoes_bytes() {
         let Some(pty) = open_pty() else {
@@ -423,10 +475,11 @@ mod tests {
 
         // Read the echoed bytes back from the master.
         let mut master_reader = std::fs::File::from(pty.master().try_clone().unwrap());
-        let mut buf = [0u8; 16];
-        let n = master_reader.read(&mut buf).unwrap();
-        assert!(n >= 2, "expected at least 2 echoed bytes, got {n}");
-        assert!(buf[..n].windows(2).any(|w| w == b"hi"));
+        let echoed = read_until_contains(&mut master_reader, b"hi");
+        assert!(
+            echoed.windows(2).any(|w| w == b"hi"),
+            "expected echo to contain \"hi\", got {echoed:?}"
+        );
     }
 
     #[test]
@@ -493,9 +546,11 @@ mod tests {
 
         // The pump echoes the leading "abc" then "^C\r\n".
         let mut master_reader = std::fs::File::from(pty.master().try_clone().unwrap());
-        let mut buf = [0u8; 32];
-        let n = master_reader.read(&mut buf).unwrap();
-        assert!(buf[..n].windows(4).any(|w| w == b"^C\r\n"));
+        let echoed = read_until_contains(&mut master_reader, b"^C\r\n");
+        assert!(
+            echoed.windows(4).any(|w| w == b"^C\r\n"),
+            "expected echo to contain \"^C\\r\\n\", got {echoed:?}"
+        );
     }
 
     #[test]
@@ -519,9 +574,11 @@ mod tests {
         // Echoed bytes should include "hi" followed by an explicit
         // CRLF (OPOST is cleared by cfmakeraw).
         let mut master_reader = std::fs::File::from(pty.master().try_clone().unwrap());
-        let mut buf = [0u8; 32];
-        let n = master_reader.read(&mut buf).unwrap();
-        assert!(buf[..n].windows(4).any(|w| w == b"hi\r\n"));
+        let echoed = read_until_contains(&mut master_reader, b"hi\r\n");
+        assert!(
+            echoed.windows(4).any(|w| w == b"hi\r\n"),
+            "expected echo to contain \"hi\\r\\n\", got {echoed:?}"
+        );
     }
 
     #[test]
@@ -545,9 +602,11 @@ mod tests {
 
         // Echo should contain "abc" followed by `\b \b`.
         let mut master_reader = std::fs::File::from(pty.master().try_clone().unwrap());
-        let mut buf = [0u8; 32];
-        let n = master_reader.read(&mut buf).unwrap();
-        assert!(buf[..n].windows(3).any(|w| w == b"\x08 \x08"));
+        let echoed = read_until_contains(&mut master_reader, b"\x08 \x08");
+        assert!(
+            echoed.windows(3).any(|w| w == b"\x08 \x08"),
+            "expected echo to contain backspace-erase, got {echoed:?}"
+        );
     }
 
     #[test]
