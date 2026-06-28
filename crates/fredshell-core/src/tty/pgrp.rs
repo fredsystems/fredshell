@@ -276,7 +276,9 @@ mod tests {
 
     #[test]
     fn tcsetpgrp_on_non_tty_returns_enotty() {
-        // /dev/null is not a tty, so tcsetpgrp must fail with ENOTTY.
+        // /dev/null is not a tty, so tcsetpgrp must fail. The errno is
+        // platform-specific: Linux reports ENOTTY (25), macOS reports
+        // ENODEV (19). Both mean "not a terminal" — accept either.
         let dev_null = std::fs::OpenOptions::new()
             .read(true)
             .write(true)
@@ -286,7 +288,11 @@ mod tests {
             .expect_err("tcsetpgrp on /dev/null must fail");
         match err {
             TcSetPgrpError::Syscall(e) => {
-                assert_eq!(e.raw_os_error(), Some(libc::ENOTTY));
+                let errno = e.raw_os_error();
+                assert!(
+                    errno == Some(libc::ENOTTY) || errno == Some(libc::ENODEV),
+                    "expected ENOTTY or ENODEV for a non-tty fd, got {errno:?}"
+                );
             }
         }
     }
@@ -299,7 +305,13 @@ mod tests {
             .open("/dev/null")
             .unwrap();
         let err = tcgetpgrp(dev_null.as_fd()).expect_err("tcgetpgrp on /dev/null must fail");
-        assert_eq!(err.raw_os_error(), Some(libc::ENOTTY));
+        // Platform-specific errno: Linux ENOTTY (25), macOS ENODEV
+        // (19). Both mean "not a terminal" — accept either.
+        let errno = err.raw_os_error();
+        assert!(
+            errno == Some(libc::ENOTTY) || errno == Some(libc::ENODEV),
+            "expected ENOTTY or ENODEV for a non-tty fd, got {errno:?}"
+        );
     }
 
     #[test]

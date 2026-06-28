@@ -430,18 +430,24 @@ mod tests {
             testing::run_source_capturing(&format!("cd {}\npwd\n", tmp.display()), &mut env)
                 .expect("ok");
 
+        // Canonicalise the expected path *before* removing the
+        // directory: on macOS /var is a symlink to /private/var, and
+        // `pwd` emits the resolved form. `canonicalize` requires the
+        // path to exist, so it must run before `remove_dir` — doing
+        // it afterwards silently fell back to the unresolved path and
+        // failed the comparison on macOS.
+        let rhs = fs::canonicalize(&tmp).unwrap_or_else(|_| tmp.clone());
+
         // Restore before asserting so a failure does not poison other
         // tests.
         std_env::set_current_dir(&original).expect("restore cwd");
         fs::remove_dir(&tmp).ok();
 
         assert_eq!(captured.result.status, ExitStatus::SUCCESS);
-        // pwd output should match the tmp directory. On macOS
-        // /tmp is symlinked to /private/tmp; canonicalise both sides.
+        // pwd output should match the tmp directory.
         let pwd_out = String::from_utf8(captured.stdout).expect("utf-8");
         let pwd_path = PathBuf::from(pwd_out.trim());
         let lhs = fs::canonicalize(&pwd_path).unwrap_or(pwd_path);
-        let rhs = fs::canonicalize(&tmp).unwrap_or(tmp);
         assert_eq!(lhs, rhs);
     }
 

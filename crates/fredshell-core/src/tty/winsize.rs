@@ -165,13 +165,20 @@ mod tests {
 
     #[test]
     fn query_on_non_tty_returns_enotty() {
-        // /dev/null is not a tty.
+        // /dev/null is not a tty. The exact errno is platform-
+        // specific: Linux reports ENOTTY (25) while macOS reports
+        // ENODEV (19) for a TIOCGWINSZ ioctl on /dev/null. Both mean
+        // "this fd is not a terminal" — accept either.
         // SAFETY: open(2) with a literal C string and no flags.
         let fd = unsafe { libc::open(c"/dev/null".as_ptr(), libc::O_RDWR) };
         assert!(fd >= 0);
         // SAFETY: open(2) returned a valid owned fd.
         let owned = unsafe { OwnedFd::from_raw_fd(fd) };
         let err = query(owned.as_fd()).unwrap_err();
-        assert_eq!(err.raw_os_error(), Some(libc::ENOTTY));
+        let errno = err.raw_os_error();
+        assert!(
+            errno == Some(libc::ENOTTY) || errno == Some(libc::ENODEV),
+            "expected ENOTTY or ENODEV for a non-tty fd, got {errno:?}"
+        );
     }
 }
