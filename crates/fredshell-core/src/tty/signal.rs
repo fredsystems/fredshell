@@ -422,16 +422,43 @@ fn install_ignore(signum: c_int) -> Result<(), InstallError> {
     Ok(())
 }
 
+/// Return the address of the thread-local `errno` for the current
+/// platform.
+///
+/// glibc/Linux exposes this as `__errno_location`; the Apple/BSD libc
+/// exposes the equivalent as `__error`. Both return a pointer to the
+/// calling thread's `errno` that is valid for the lifetime of the
+/// thread, and the call itself is async-signal-safe.
+///
+/// # Safety
+///
+/// The returned pointer aliases the thread-local `errno`. Callers must
+/// only dereference it on the same thread and must not retain it past
+/// the thread's lifetime.
+#[inline]
+unsafe fn errno_location() -> *mut c_int {
+    #[cfg(target_os = "linux")]
+    // SAFETY: FFI call to the platform errno accessor; see fn docs.
+    unsafe {
+        libc::__errno_location()
+    }
+    #[cfg(not(target_os = "linux"))]
+    // SAFETY: FFI call to the platform errno accessor; see fn docs.
+    unsafe {
+        libc::__error()
+    }
+}
+
 /// Async-signal-safe signal handler.
 ///
 /// MUST contain only async-signal-safe operations: atomic loads /
 /// stores and `write(2)`. No allocation, no locking, no formatting.
 extern "C" fn handler(signum: c_int) {
     // Preserve errno across the handler, since `write(2)` may clobber it.
-    // SAFETY: `__errno_location` / `__error` returns a thread-local
-    // pointer that is valid for the lifetime of the thread; reading
-    // and restoring through it is async-signal-safe.
-    let errno_save = unsafe { *libc::__errno_location() };
+    // SAFETY: `errno_location` returns a thread-local pointer that is
+    // valid for the lifetime of the thread; reading and restoring
+    // through it is async-signal-safe.
+    let errno_save = unsafe { *errno_location() };
 
     if signum == SIGINT || signum == SIGALRM {
         let ptr = CANCEL_FLAG_PTR.load(Ordering::Acquire);
@@ -458,19 +485,39 @@ extern "C" fn handler(signum: c_int) {
     }
 
     // SAFETY: same justification as the save above.
-    unsafe { *libc::__errno_location() = errno_save };
+    unsafe { *errno_location() = errno_save };
 }
 
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use super::{
-        CANCEL_FLAG_PTR, Handlers, INSTALLED, SIG_PIPE_WRITE_FD, Signal, make_self_pipe,
-        set_cloexec, set_nonblock,
+        CANCEL_FLAG_PTR, Handlers, INSTALLED, SIG_PIPE_WRITE_FD, Signal, errno_location,
+        make_self_pipe, set_cloexec, set_nonblock,
     };
     use libc::{F_GETFD, F_GETFL, FD_CLOEXEC, O_NONBLOCK};
     use std::os::fd::AsRawFd;
     use std::sync::atomic::Ordering;
+
+    #[test]
+    fn errno_location_is_non_null_and_round_trips() {
+        // The handler saves and restores errno through this pointer.
+        // It must resolve to a usable thread-local address on every
+        // supported platform (glibc `__errno_location`, Apple/BSD
+        // `__error`). A null pointer here would mean the handler
+        // dereferences null on signal delivery.
+        // SAFETY: dereferenced only on this thread; the pointer aliases
+        // the thread-local errno per the function contract.
+        unsafe {
+            let loc = errno_location();
+            assert!(!loc.is_null());
+
+            let saved = *loc;
+            *loc = 42;
+            assert_eq!(*loc, 42);
+            *loc = saved;
+        }
+    }
 
     // NOTE: `install` is exercised by 04.6 / 04.10 integration tests
     // because installing process-wide sigactions inside a cargo test
