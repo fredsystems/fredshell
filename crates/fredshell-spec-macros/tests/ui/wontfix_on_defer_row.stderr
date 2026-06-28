@@ -1,0 +1,5 @@
+error: spec sheet `Documents/specs/builtins/cd.md` row `3.9` is classified `defer:3`, but `refuse!(wontfix, …)` requires a `wontfix` row
+ --> tests/ui/wontfix_on_defer_row.rs:5:36
+  |
+5 |     let _ = refuse!(wontfix, "cd", "3.9");
+  |                                    ^^^^^

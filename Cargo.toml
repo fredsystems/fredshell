@@ -5,6 +5,7 @@ members = [
   "crates/fredshell-ansi",
   "crates/fredshell-core",
   "crates/fredshell-prompt",
+  "crates/fredshell-spec-macros",
   "crates/fredshell-spec-runner",
   "xtask",
 ]
@@ -63,7 +64,13 @@ shell-words = "=1.1.1"
 # Internal crates
 fredshell-ansi = { version = "=0.1.0", path = "crates/fredshell-ansi" }
 fredshell-core = { version = "=0.1.0", path = "crates/fredshell-core" }
+fredshell-spec-macros = { version = "=0.1.0", path = "crates/fredshell-spec-macros" }
 fredshell-spec-runner = { version = "=0.1.0", path = "crates/fredshell-spec-runner" }
+
+# Proc-macro toolchain
+proc-macro2 = "=1.0.106"
+quote = "=1.0.46"
+syn = { version = "=2.0.118", features = ["full"] }
 
 # Terminal / OS
 libc = "=0.2.186"
@@ -76,6 +83,7 @@ duct = "=1.1.1"
 assert_cmd = "=2.2.2"
 predicates = "=3.1.4"
 tempfile = "=3.27.0"
+trybuild = "=1.0.117"
 
 # Benchmarking
 criterion = "=0.8.2"

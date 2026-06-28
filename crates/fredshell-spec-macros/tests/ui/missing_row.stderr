@@ -1,0 +1,5 @@
+error: spec sheet `Documents/specs/builtins/cd.md` has no §3 row `3.99`
+ --> tests/ui/missing_row.rs:5:36
+  |
+5 |     let _ = refuse!(wontfix, "cd", "3.99");
+  |                                    ^^^^^^

@@ -19,6 +19,7 @@ pub mod builtins;
 pub mod exec;
 pub mod parser;
 pub mod repl;
+pub mod spec;
 pub mod tty;
 
 pub use exec::builtin::{Tier2Builtin, Tier2Ctx, Tier2Error};
@@ -26,6 +27,15 @@ pub use exec::env::{ExecEnv, ExternalCommandPolicy};
 pub use exec::error::{ExecError, ExitStatus, NoExternalExecutorReason, RunError, RunResult};
 pub use exec::{run_script, run_source};
 pub use parser::{ParseError, ParseErrorKind, Script, parse};
+pub use spec::{REFUSAL_EXIT_STATUS, Refusal, RefusalKind};
+
+/// Refuse a spec-sheet behaviour classified `wontfix` or `defer:N`,
+/// validating the sheet row and classification at compile time.
+///
+/// Re-exported from `fredshell-spec-macros` so builtins call
+/// `fredshell_core::refuse!` against the [`Refusal`] type defined in
+/// this crate. See `PLAN_07` §8.2 and the [`spec`] module.
+pub use fredshell_spec_macros::refuse;
 
 use std::fmt;
 use std::io;

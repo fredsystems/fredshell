@@ -11,6 +11,7 @@ workspace = true
 
 [dependencies]
 fredshell-ansi.workspace = true
+fredshell-spec-macros.workspace = true
 libc.workspace = true
 shell-words.workspace = true
 
