@@ -16,7 +16,7 @@
     # `tests/spec/REFERENCE.md` and re-recording any affected fixtures
     # in the same commit. `cargo xtask spec versions` reports drift
     # between this pin and the floating `nixpkgs` as advisory output.
-    nixpkgs-reference.url = "github:nixos/nixpkgs/d233902339c02a9c334e7e593de68855ad26c4cb";
+    nixpkgs-reference.url = "github:nixos/nixpkgs/eb50086016909127ddf11c3a263ef3a45c35a665";
 
     rust-overlay = {
       url = "github:oxalica/rust-overlay";
