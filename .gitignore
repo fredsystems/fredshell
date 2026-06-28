@@ -1,5 +1,10 @@
 # Rust
-target/
+# Anchored to the repo root: the cargo build dir is only at the
+# workspace root. An unanchored `target/` also matches directories
+# named `target` anywhere in the tree (e.g. spec-corpus `.fs/`
+# skeletons such as `cd_cdpath.fs/base/target/`), which are real
+# fixtures that must be committed.
+/target/
 **/*.rs.bk
 *.pdb
 *proptest-regressions
