@@ -57,14 +57,18 @@ impl FakePty {
         // SAFETY: openpty writes two valid fds on success; the three
         // null arguments are explicitly permitted (no name buffer,
         // no termios template, no winsize template — slave inherits
-        // sensible defaults).
+        // sensible defaults). `null_mut` is used for the termios /
+        // winsize templates so the call type-checks on both Linux
+        // (`*const termios`) and macOS/BSD (`*mut termios`): a
+        // `*mut T` null coerces to a `*const T` parameter, but not
+        // vice versa.
         let rc = unsafe {
             libc::openpty(
                 &raw mut master,
                 &raw mut slave,
                 std::ptr::null_mut(),
-                std::ptr::null(),
-                std::ptr::null(),
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
             )
         };
         if rc != 0 {

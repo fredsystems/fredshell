@@ -122,13 +122,17 @@ mod tests {
         let mut slave: libc::c_int = -1;
         // SAFETY: openpty writes two valid fds on success; all
         // other pointer arguments are null which is permitted.
+        // `null_mut` is used for the termios / winsize templates so
+        // the call type-checks on both Linux (`*const termios`) and
+        // macOS/BSD (`*mut termios`): a `*mut T` null coerces to a
+        // `*const T` parameter, but not vice versa.
         let rc = unsafe {
             libc::openpty(
                 &raw mut master,
                 &raw mut slave,
                 std::ptr::null_mut(),
-                std::ptr::null(),
-                std::ptr::null(),
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
             )
         };
         if rc != 0 {
@@ -203,13 +207,20 @@ mod tests {
 
     #[test]
     fn enter_on_non_tty_returns_error() {
-        // /dev/null is not a tty; tcgetattr should fail with ENOTTY.
+        // /dev/null is not a tty; tcgetattr should fail. The exact
+        // errno is platform-specific: Linux reports ENOTTY (25) while
+        // macOS reports ENODEV (19) for tcgetattr on /dev/null. Both
+        // mean "this fd is not a terminal" — accept either.
         // SAFETY: open(2) with a literal C string and no flags.
         let fd = unsafe { libc::open(c"/dev/null".as_ptr(), libc::O_RDWR) };
         assert!(fd >= 0);
         let owned = unsafe { OwnedFd::from_raw_fd(fd) };
         let err = enter(owned.as_raw_fd()).unwrap_err();
-        assert_eq!(err.raw_os_error(), Some(libc::ENOTTY));
+        let errno = err.raw_os_error();
+        assert!(
+            errno == Some(libc::ENOTTY) || errno == Some(libc::ENODEV),
+            "expected ENOTTY or ENODEV for a non-tty fd, got {errno:?}"
+        );
     }
 
     #[test]

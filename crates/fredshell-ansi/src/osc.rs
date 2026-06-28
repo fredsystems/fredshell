@@ -230,6 +230,13 @@ impl Encode for Osc52Set {
 const BASE64_ALPHABET: &[u8; 64] =
     b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
+// `chunks_exact_to_as_chunks` is a nightly-only clippy nursery lint
+// that suggests `as_chunks::<3>()`, which is still unstable and thus
+// unavailable on the stable toolchain we also build with. Allow it
+// here; `unknown_lints` keeps stable clippy (which does not know the
+// lint name) from erroring on the allow itself.
+#[allow(unknown_lints)]
+#[allow(clippy::chunks_exact_to_as_chunks)]
 fn write_base64<W: Write + ?Sized>(w: &mut W, bytes: &[u8]) -> io::Result<()> {
     let mut chunks = bytes.chunks_exact(3);
     let mut buf = [0_u8; 4];

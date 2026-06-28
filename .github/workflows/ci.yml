@@ -52,7 +52,16 @@ jobs:
       - uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # master
         with:
           toolchain: ${{ matrix.toolchain }}
+          # `cargo xtask check` runs `cargo fmt` and `cargo clippy`,
+          # whose components are not in the default nightly profile.
+          components: rustfmt, clippy
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+      # `cargo xtask check` invokes `cargo-machete` as part of the
+      # mandatory verification suite. The bare runner has no nix
+      # devShell, so install it explicitly here.
+      - uses: taiki-e/install-action@bffeee26d4db9be238a4ea78d8826604ebcb594d # v2.82.5
+        with:
+          tool: cargo-machete
       - run: cargo xtask check
 
   compat:
