@@ -59,7 +59,7 @@ jobs:
       # `cargo xtask check` invokes `cargo-machete` as part of the
       # mandatory verification suite. The bare runner has no nix
       # devShell, so install it explicitly here.
-      - uses: taiki-e/install-action@bffeee26d4db9be238a4ea78d8826604ebcb594d # v2.82.5
+      - uses: taiki-e/install-action@16b05812d776ae1dfaabc8277e421fb6d2506419 # v2.82.7
         with:
           tool: cargo-machete
       - run: cargo xtask check
