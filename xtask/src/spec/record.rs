@@ -419,14 +419,28 @@ mod tests {
     /// assert that bash honours `$0` when given one, which it always
     /// does — the assertion would survive the regression it guards.
     ///
-    /// Requires the pinned bash: `FREDSHELL_REFERENCE_BASH` is exported
-    /// by the nix devshell, which is where CI runs the suite. Panics
-    /// rather than returning early, because a silent skip would let the
-    /// regression ship unnoticed on any machine missing the variable.
+    /// Needs the pinned bash, which only the nix devshell provides. The
+    /// CI matrix also runs `cargo test --workspace` on bare runners that
+    /// have no devshell (see `.github/workflows/ci.yml`), so this cannot
+    /// hard-require the variable. It instead fails when the devshell is
+    /// present but the variable is not — a broken devshell — and skips
+    /// with an explicit notice otherwise. The `Nix devShell checks` job
+    /// does export it, so the regression stays guarded in CI rather than
+    /// being quietly skipped everywhere.
     #[test]
     fn recorded_diagnostics_use_stable_argv0_not_store_path() {
-        let bash = std::env::var("FREDSHELL_REFERENCE_BASH")
-            .expect("FREDSHELL_REFERENCE_BASH must be set; run inside `nix develop --impure`");
+        let Ok(bash) = std::env::var("FREDSHELL_REFERENCE_BASH") else {
+            assert!(
+                std::env::var_os("IN_NIX_SHELL").is_none(),
+                "inside the nix devshell but FREDSHELL_REFERENCE_BASH is unset; \
+                 the devshell is misconfigured"
+            );
+            println!(
+                "skipping: FREDSHELL_REFERENCE_BASH is unset and no nix devshell \
+                 is active; run inside `nix develop --impure` to exercise this test"
+            );
+            return;
+        };
 
         // A builtin that emits a diagnostic to stderr with a non-zero
         // exit, needing no external command or PATH.
