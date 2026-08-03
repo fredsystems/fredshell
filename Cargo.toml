@@ -69,7 +69,7 @@ fredshell-spec-runner = { version = "=0.1.0", path = "crates/fredshell-spec-runn
 
 # Proc-macro toolchain
 proc-macro2 = "=1.0.106"
-quote = "=1.0.46"
+quote = "=1.0.47"
 syn = { version = "=2.0.118", features = ["full"] }
 
 # Terminal / OS
