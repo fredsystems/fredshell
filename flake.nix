@@ -16,7 +16,7 @@
     # `tests/spec/REFERENCE.md` and re-recording any affected fixtures
     # in the same commit. `cargo xtask spec versions` reports drift
     # between this pin and the floating `nixpkgs` as advisory output.
-    nixpkgs-reference.url = "github:nixos/nixpkgs/536c906eb9a9a2a38e7a454f4a4ff254b1e6f493";
+    nixpkgs-reference.url = "github:nixos/nixpkgs/aec71e3ada2e0b6bebd3d84c01523eb137dff06f";
 
     rust-overlay = {
       url = "github:oxalica/rust-overlay";
@@ -144,7 +144,6 @@
               corePkgs = chk.enabledPackages or [ ];
 
               extraRustTools = [
-                chk.passthru.devPackages
                 pkgs.cargo-deny
                 pkgs.cargo-machete
                 pkgs.cargo-make
@@ -157,11 +156,28 @@
                 pkgs.perf
               ];
 
+              # Extra dev packages provided by mkCheck (includes the rust
+              # toolchain).
               extraDev = chk.passthru.devPackages or [ ];
             in
             {
               default = pkgs.mkShell {
-                buildInputs = extraRustTools ++ corePkgs ++ extraDev;
+                # ORDER IS SIGNIFICANT. `extraDev` carries the mkCheck rust
+                # toolchain (rustc + cargo + clippy + rustfmt from a single
+                # release), while `corePkgs` carries git-hooks.nix's own
+                # standalone `cargo` / `clippy` / `rustfmt` derivations, which
+                # can come from a different rustc release. Two toolchains end
+                # up on PATH and earlier entries win, so `extraDev` MUST come
+                # first — otherwise `cargo clippy` runs a `clippy-driver` built
+                # by a different rustc than the `rustc` that compiled the
+                # dependency rlibs and every workspace crate fails with
+                # E0514 "found crate ... compiled by an incompatible version
+                # of rustc".
+                #
+                # `extraDev` must also stay a flat splice rather than an
+                # element of `extraRustTools`: nesting a list inside
+                # `buildInputs` is deprecated as of Nixpkgs 26.05.
+                buildInputs = extraDev ++ corePkgs ++ extraRustTools;
 
                 # PLAN_05 §4.5 — expose the pinned reference toolchain
                 # to the spec harness via env vars. The harness reads
