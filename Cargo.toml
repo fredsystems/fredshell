@@ -73,7 +73,7 @@ quote = "=1.0.47"
 syn = { version = "=3.0.3", features = ["full"] }
 
 # Terminal / OS
-libc = "=0.2.186"
+libc = "=0.2.189"
 
 # xtask helpers
 base64 = "=0.22.1"
