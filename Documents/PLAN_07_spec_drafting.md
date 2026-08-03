@@ -1,6 +1,19 @@
 # PLAN_07 — Spec-Sheet Drafting Methodology
 
-> Last updated: 2026-06-28 — batch-1 drafting continues (08.2): the
+> Last updated: 2026-06-28 — handoff consolidation before the
+> branch is PR'd (§14 row 08.2-docs): added §15 Cleanup registry
+> (entry 08.2e-CU1, the `mixed-line-ending` hook corrupting
+> fixtures that contain a CR), a Status column on §10 plus the new
+> §10.1 batch-1 checklist (5 of 10 sheets done), the
+> symbol-named-builtin filename table in §3 (`colon.md` / `dot.md`
+> / `bracket.md`), and a provisional `defer:N` milestone table in
+> §5.3. Also corrected four stale `PLAN_16` milestone references to
+> `PLAN_19`. `Documents/specs/README.md` gained the corpus-authoring
+> runbook (recorder constraints, fixtures-are-golden-data, the
+> prettier trap). **A future agent picking this up should read §10.1
+> for what is left and §15 before drafting `printf`.**
+>
+> Earlier on 2026-06-28 — batch-1 drafting continues (08.2): the
 > fifth sheet, `echo`, landed with 14 §3 rows (12 `support` backed
 > by 12 hermetic corpus cases, 2 `defer` — `\u` / `\U` Unicode
 > escapes to milestone 5 because they are locale-dependent and the
@@ -121,7 +134,7 @@ classify each one_:
   invoking it will get a loud, deliberate error citing the sheet.
   See §6.
 - **`defer:N`** — fredshell will eventually support this, but not
-  in milestone N. `N` is a PLAN_16 milestone number. Deferred
+  in milestone N. `N` is a `PLAN_19` milestone number. Deferred
   rows turn into post-v1 worklist entries.
 
 Every behaviour in bash's surface has exactly one classification.
@@ -196,7 +209,7 @@ reference manual:
   multibyte handling. This category exists because PLAN_08's
   v1 fuzzer is `LC_ALL=C`-only (PLAN_08 §11 Q09.5); locale
   correctness is therefore hand-curated here until the
-  post-v1 `F2-utf8` fuzz tier ships (PLAN_16 milestone
+  post-v1 `F2-utf8` fuzz tier ships (`PLAN_19` milestone
   M-15-utf8-fuzz). Cases live in `tests/spec/utf8_locale/`.
 
 That is approximately 22 feature sheets plus one UTF-8/locale
@@ -251,6 +264,26 @@ Documents/specs/
 Filenames are lowercase, underscored, single-token per concept.
 A builtin's filename is exactly its invocation name. A feature's
 filename is its bash-manual heading slug.
+
+**Exception — symbol-named builtins.** Three Tier-1 builtins are
+named with punctuation rather than letters: `:`, `.`, and `[`. Using
+the glyph as the filename is hostile to tooling — it breaks glob
+patterns, and because the sheet-id is the filename stem it renders
+the `<sheet-id>-<row#>` refusal diagnostic as nonsense like
+`:-3.1`. These sheets therefore take a spelled-out ASCII filename,
+and the sheet-id is that filename:
+
+| Builtin | Sheet filename | Sheet-id  |
+| ------- | -------------- | --------- |
+| `:`     | `colon.md`     | `colon`   |
+| `.`     | `dot.md`       | `dot`     |
+| `[`     | `bracket.md`   | `bracket` |
+
+The sheet's H1 and §1 Synopsis still carry the real invocation name,
+and the sheet opens with an HTML comment recording the deviation so
+the exception is visible where it applies. `colon.md` landed in
+subtask 08.2d; `dot.md` and `bracket.md` are drafted under 08.6.
+No other sheet may deviate from the invocation-name rule.
 
 Sheets are Markdown. Markdown is not a clever choice — it is the
 worst format that still works — but it is what the rest of the
@@ -351,7 +384,7 @@ file bugs by quoting the row number.
 
 ## 6. Deferred rows
 
-For every `defer:N` row in §3, one paragraph plus a PLAN_16
+For every `defer:N` row in §3, one paragraph plus a `PLAN_19`
 milestone reference. The paragraph names the missing-feature
 dependency (e.g., "requires Tier-2 process accounting") and
 states the post-v1 reclassification target.
@@ -425,7 +458,7 @@ conversation.
 ### 5.3. `defer:N`
 
 The behaviour will be supported, but not before milestone N (a
-PLAN_16 milestone number). The user invoking it gets a
+`PLAN_19` milestone number). The user invoking it gets a
 different error:
 
 ```text
@@ -446,6 +479,23 @@ to milestone <N> (<milestone-name>). <workaround>. See:
 The workaround is mandatory and is the most useful field for
 the user. A `defer` row without a workaround is forbidden by
 `xtask check-specs`.
+
+**Provisional milestone numbering.** `Documents/PLAN_19_milestones.md`
+does not exist yet, so the milestone numbers used by `defer:N` rows
+are provisional and are recorded here to keep them consistent across
+sheets. Drafters MUST reuse an existing row rather than invent a new
+number; if a deferred behaviour does not fit any theme below, stop
+and raise it rather than adding a number unilaterally.
+
+| N   | Provisional theme          | Meaning for `defer:N` rows                                                              | First used  |
+| --- | -------------------------- | --------------------------------------------------------------------------------------- | ----------- |
+| 3   | Filesystem-touch builtins  | Needs real filesystem semantics the v0 corpus sandbox cannot express (notably symlinks) | `cd` 3.8    |
+| 4   | `shopt` shell options      | Gated on `shopt` existing, because the behaviour is toggled by a shell option           | `cd` 3.12   |
+| 5   | UTF-8 / locale correctness | Locale-dependent; needs the recorder to run under an explicit UTF-8 locale (§2.2)       | `echo` 3.13 |
+
+When `PLAN_19` is drafted it supersedes this table: the numbers are
+remapped to real milestone IDs in one pass across all sheets, and
+this subsection is replaced by a pointer to `PLAN_19`.
 
 **Workarounds are best-effort guidance, not contract.** The
 workaround is the sheet drafter's good-faith hint about how to
@@ -635,19 +685,47 @@ corpus, not the sheets. Sheets are commentary on the corpus.
 
 ## 10. Subtasks
 
-| Subtask | Surface                                                               | Owner   | Gate                         |
-| ------- | --------------------------------------------------------------------- | ------- | ---------------------------- |
-| 08.1    | Author `Documents/specs/_TEMPLATE.md` and `Documents/specs/README.md` | PLAN_07 | none                         |
-| 08.2    | Draft and review batch 1 (10 sheets: `cd`, trivial builtins, state)   | PLAN_07 | 08.1                         |
-| 08.3    | Draft and review batch 2 (PLAN_13 job-control builtins)               | PLAN_07 | 08.2, PLAN_13 reviewed       |
-| 08.4    | `cargo xtask check-specs` cross-reference checker                     | PLAN_07 | 08.1                         |
-| 08.5    | `refuse!` macro and unit tests                                        | PLAN_07 | 08.1                         |
-| 08.6    | Draft and review batches 3–8 (~60 sheets, owner-grouped)              | PLAN_07 | 08.2                         |
-| 08.7    | Sheet-driven `help` builtin                                           | PLAN_06 | 08.1, PLAN_06 Phase B `help` |
-| 08.8    | First wontfix refusal corpus cases (`tests/spec/refusals/`)           | PLAN_07 | 08.5                         |
+| Subtask | Surface                                                               | Owner     | Gate                           | Status                     |
+| ------- | --------------------------------------------------------------------- | --------- | ------------------------------ | -------------------------- |
+| 08.1    | Author `Documents/specs/_TEMPLATE.md` and `Documents/specs/README.md` | `PLAN_07` | none                           | Done (§14)                 |
+| 08.2    | Draft and review batch 1 (10 sheets: `cd`, trivial builtins, state)   | `PLAN_07` | 08.1                           | In progress — 5 of 10 done |
+| 08.3    | Draft and review batch 2 (`PLAN_13` job-control builtins)             | `PLAN_07` | 08.2, `PLAN_13` reviewed       | Not started                |
+| 08.4    | `cargo xtask check-specs` cross-reference checker                     | `PLAN_07` | 08.1                           | Done (§14)                 |
+| 08.5    | `refuse!` macro and unit tests                                        | `PLAN_07` | 08.1                           | Done (§14)                 |
+| 08.6    | Draft and review batches 3–8 (~60 sheets, owner-grouped)              | `PLAN_07` | 08.2                           | Not started                |
+| 08.7    | Sheet-driven `help` builtin                                           | `PLAN_06` | 08.1, `PLAN_06` Phase B `help` | Not started                |
+| 08.8    | First wontfix refusal corpus cases (`tests/spec/refusals/`)           | `PLAN_07` | 08.5                           | Not started                |
 
-Subtasks 08.2 and 08.3 unblock PLAN_13's implementation;
-subtask 08.6 unblocks PLAN_06 Phase B's implementation.
+Subtasks 08.2 and 08.3 unblock `PLAN_13`'s implementation;
+subtask 08.6 unblocks `PLAN_06` Phase B's implementation.
+
+### 10.1. Batch-1 sheet checklist (subtask 08.2)
+
+The ten batch-1 sheets, in the §7 recommended order. One sheet per
+commit; the log ID is the §14 row. Sheets are drafted against the
+pinned reference bash (`FREDSHELL_REFERENCE_BASH`, bash 5.3p9) and
+every `support` row carries a corpus case with
+`status = "deferred:PLAN_12"`.
+
+| #   | Sheet    | Log ID | Status  | Notes                                                              |
+| --- | -------- | ------ | ------- | ------------------------------------------------------------------ |
+| 1   | `cd`     | 08.2a  | Done    | 12 rows; 7 support, 1 wontfix, 4 defer                             |
+| 2   | `true`   | 08.2b  | Done    | 4 rows, all support                                                |
+| 3   | `false`  | 08.2c  | Done    | 4 rows, all support; `true` mirror                                 |
+| 4   | `:`      | 08.2d  | Done    | 6 rows, all support; `colon.md` per §3; first §7 use               |
+| 5   | `echo`   | 08.2e  | Done    | 14 rows; 12 support, 2 defer; surfaced cleanup 08.2e-CU1           |
+| 6   | `printf` | —      | Pending | Escape-heavy — read cleanup 08.2e-CU1 (§15) before drafting        |
+| 7   | `set`    | —      | Pending | ~80 rows; use `### 3.A` sub-headers per §4                         |
+| 8   | `shopt`  | —      | Pending | ~50 rows; owns the `defer:4` dependency of `cd` 3.12 / `echo` 3.14 |
+| 9   | `unset`  | —      | Pending | State-mutating                                                     |
+| 10  | `trap`   | —      | Pending | Most complex Tier-1 builtin; sets the per-flag detail bar          |
+
+**Batch-1 exit criteria.** All ten sheets landed, then the batch is
+reviewed back-to-back per §7 and the batch-level comments are filed.
+`xtask check-specs` remains red until 08.6 completes the inventory —
+see §8.1 and the 08.4 row in §14; that is expected, not a
+regression, and it is deliberately not wired into `xtask pc` or CI
+until 08.6.
 
 ## 11. Open questions
 
@@ -689,8 +767,8 @@ subtask 08.6 unblocks PLAN_06 Phase B's implementation.
   references sheet row numbers.
 - **PLAN_13** — eight job-control builtin sheets are batch 2.
   Each PLAN_13 subtask is gated on its sheet being approved.
-- **PLAN_16** — milestone-N labels in `defer:N` rows point at
-  PLAN_16 milestone definitions.
+- **`PLAN_19`** — milestone-N labels in `defer:N` rows point at
+  `PLAN_19` milestone definitions.
 
 ## 13. References
 
@@ -728,3 +806,15 @@ merges to `main`.
 | 08.2c   | TBD    | 2026-06-28 | Batch 1, sheet 3 of 10: `false`. Authored `Documents/specs/builtins/false.md` (4 §3 rows, all `support`; no `wontfix` / `defer` rows — the exact `true` mirror, §5 and §6 carry an explicit "None."). Probed bash 5.3p9 (`help false`, behaviour probes): the builtin ignores every operand and option — including `--help` / `--version` — and always exits `1` with no output, in deliberate contrast to GNU coreutils `/usr/bin/false`, which the builtin shadows inside the shell (captured as §4 quirks 1–2 and row 3.3). Added 4 hermetic corpus cases under `tests/spec/builtins_tier1/false_*.case.toml` (`status = "deferred:PLAN_12"`): `false_exit_one`, `false_ignores_args`, `false_ignores_help`, `false_no_output`. The no-output case reads its redirect files with `$(<file)` rather than `cat` to stay within the recorder's `env_clear()` no-external-coreutils constraint; the failing exit is observed via `echo "exit=$?"` so the recorded status is the trailing `echo`'s `0`. Fixtures recorded against bash 5.3p9. `check-specs` reports the `false` sheet clean (all 4 support rows resolve, sections valid); the 4 new cases drop out of the orphan list, leaving the global count at the expected drafting-window 21 (still red, not yet wired into `pc` / `check` — that lands at 08.6). `spec lint --skip-builtins-drift`, `compat` (result: ok, no regressions), `cargo test --workspace`, `clippy --all-targets -D warnings`, `cargo-machete`, `cargo fmt --check`, `markdownlint-cli2`, and `prettier --check` all green; `COMPAT.md` regenerated. No Rust touched. Remaining batch-1 sheets (`echo`, `printf`, `:`, `set`, `shopt`, `unset`, `trap`) follow in subsequent steps.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 | 08.2d   | TBD    | 2026-06-28 | Batch 1, sheet 4 of 10: `:` (null command). Authored `Documents/specs/builtins/colon.md` (6 §3 rows, all `support`; no `wontfix` / `defer` rows). **Filename deviation (user decision):** `PLAN_07` §3.1 says a builtin's sheet filename is exactly its invocation name, but a literal `:.md` is hostile to tooling — broken globs and a `:-3.1` `<sheet-id>-<row#>` `refuse!` diagnostic. The sheet is named `colon.md` (sheet-id `colon`); the H1 and §1 Synopsis carry the real `:` name, and a leading HTML comment records the deviation. This is also the **first sheet to exercise the optional §7 POSIX-divergence section** (special built-in assignment persistence) — the `check-specs` section-order check tolerates §7 between §6 and §8, confirmed clean. Probed bash 5.3p9 (`help :`, side-effect probes): `:` expands its arguments (so `${var=word}` assigns and `$(cmd)` runs) and performs redirections (so `: > file` truncates), unlike `true` which treats operands as inert; it always exits `0`. As a POSIX special built-in, `var=value :` prefix assignments persist only under `--posix` — default bash (and fredshell, row 3.6 + §7) discards them. Added 6 hermetic corpus cases under `tests/spec/builtins_tier1/colon_*.case.toml` (`status = "deferred:PLAN_12"`): `colon_exit_zero`, `colon_ignores_args`, `colon_arg_assign`, `colon_cmd_subst`, `colon_truncate`, `colon_assign_scope`. All cases use only shell builtins + `$(<file)` (no external coreutils, per the recorder's `env_clear()` constraint). Fixtures recorded against bash 5.3p9. `check-specs` reports the `colon` sheet clean (all 6 support rows resolve, sections valid incl. §7); the 6 new cases drop out of the orphan list, leaving the global count at the expected drafting-window 21 (still red, not yet wired into `pc` / `check` — that lands at 08.6). `spec lint --skip-builtins-drift`, `compat` (result: ok, no regressions), `cargo test --workspace`, `clippy --all-targets -D warnings`, `cargo-machete`, `cargo fmt --check`, `markdownlint-cli2`, and `prettier --check` all green; `COMPAT.md` regenerated. No Rust touched. Remaining batch-1 sheets (`echo`, `printf`, `set`, `shopt`, `unset`, `trap`) follow in subsequent steps.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
 | 08.2e   | TBD    | 2026-06-28 | Batch 1, sheet 5 of 10: `echo`. Authored `Documents/specs/builtins/echo.md` (14 §3 rows: 12 `support`, 2 `defer`) — the first moderate sheet of the batch. Probed bash 5.3p9 (`help echo` plus byte-level `od` probes under `env -i`): arguments are space-joined with a trailing newline; `-n` suppresses the newline; `-e` enables the C-escape set (`\t`, `\n`, `\r`, `\\`, `\a`, `\b`, `\e`, `\f`, `\v`, octal `\0nnn`, hex `\xHH`); `-E` (the default) keeps escapes literal; flags bundle (`-ne`); option parsing stops at the first word that is not a `-`-prefixed run of `n` / `e` / `E`, so `-nx`, `--`, `--help`, and `-x` all print verbatim (no end-of-options or help handling — §4 quirk 1); `\c` truncates the whole output including the newline (§4 quirk 3); and echo's octal needs a leading zero (`\0101`) unlike `printf` (§4 quirk 4). Two `defer` rows: 3.13 `\u` / `\U` Unicode escapes → milestone 5 (locale-dependent — under the recorder's `env_clear()` C locale bash prints them verbatim instead of emitting UTF-8 bytes, so they belong to the `PLAN_07` §2.2 UTF-8/locale category and `tests/spec/utf8_locale/`), and 3.14 `xpg_echo`-default escape interpretation → milestone 4 (pending the `shopt` sheet, mirroring `cd`'s `cdable_vars`). §7 records the POSIX divergence (POSIX `echo` defines none of `-n` / `-e` / `-E`). Added 12 hermetic corpus cases under `tests/spec/builtins_tier1/echo_*.case.toml` (`status = "deferred:PLAN_12"`), all shell-builtin-only, using `$(<file)` where bytes must be captured. Confirmed the runner's TOML `"""` script field is an escape-processing basic string, so `\\t` in a case becomes the literal `\t` bash sees. **Surfaced tooling conflict:** the repository's `mixed-line-ending` pre-commit hook rewrites a raw CR to LF, which silently corrupted the first `echo_e_escapes` fixture (its `\r` byte became `\n`) and rejected the commit. The case was redesigned to compare each `-e` result against its ANSI-C `$'...'` equivalent and emit only printable `name=ok` tokens, so no control bytes reach a fixture; the octal (3.11) and hex (3.12) cases still assert golden printable bytes, which anchors the escape machinery independently of `$'...'`. Any future fixture needing a literal CR will hit the same hook — see the cleanup entry proposed in the completion report. Fixtures recorded against bash 5.3p9. `check-specs` reports the `echo` sheet clean (all 12 support rows resolve, sections valid incl. §7, both `defer` rows carry §6 workarounds); the 12 new cases drop out of the orphan list, leaving the global count at the expected drafting-window 21 (still red, not yet wired into `pc` / `check` — that lands at 08.6). `spec lint --skip-builtins-drift`, `compat` (result: ok, no regressions), `cargo test --workspace`, `clippy --all-targets -D warnings`, `cargo-machete`, `cargo fmt --check`, `markdownlint-cli2`, and `prettier --check` all green; `COMPAT.md` regenerated. No Rust touched. Remaining batch-1 sheets (`printf`, `set`, `shopt`, `unset`, `trap`) follow in subsequent steps. |
+
+| 08.2-docs | TBD | 2026-06-28 | Handoff-quality consolidation of the batch-1 drafting documentation, before the branch is opened as a PR. No sheets or corpus cases changed. (1) Added §15 Cleanup registry with entry 08.2e-CU1 for the `mixed-line-ending` hook corrupting recorded fixtures that contain a lone CR — previously that defect existed only as prose inside the 08.2e log cell, which the AGENTS.md "pre-existing bugs surfaced during a subtask" rule forbids ("informal known issues sections are NOT used"). (2) Added a Status column to the §10 subtask table and a new §10.1 batch-1 sheet checklist (5 of 10 done, per-sheet log IDs, per-sheet notes, and the batch exit criteria), so progress is legible without reading five multi-thousand-character §14 cells. (3) Recorded the symbol-named-builtin filename exception in §3 as a table — `:` → `colon.md`, `.` → `dot.md`, `[` → `bracket.md` (names chosen by the user) — because the invocation-name rule cannot apply to punctuation and `.` and `[` are still unsheeted, so the 08.2d decision would otherwise be re-litigated. (4) Added a provisional `defer:N` milestone table to §5.3 (3 = filesystem-touch, 4 = `shopt`, 5 = UTF-8/locale) with an instruction to reuse rather than invent numbers, since `Documents/PLAN_19_milestones.md` does not exist yet and the numbers were being coined per-sheet. (5) Expanded `Documents/specs/README.md` §"Authoring a sheet" with the probe-bash rule, the recorder constraints that actually bite (no `PATH` so coreutils exit 127 — use `$(<file)` / `${PWD##*/}`; effectively `C` locale; symlinks do not materialise; `.keep` in `.fs/` leaf dirs; `[env]` renamed fields and `$SANDBOX`; TOML `"""` processes escapes so `\\t` yields `\t`), the fixtures-are-golden-data warning pointing at 08.2e-CU1, and the prettier/CommonMark trap. **Bonus fix:** four stale `PLAN_16` milestone references in §1, §2.2, §6 and §12 were corrected to `PLAN_19` — `PLAN_16` is the config plan; `PLAN_19` is milestones. These were cascade-renumber leftovers (§13 already pointed at `PLAN_19_milestones.md`) and would have sent a reader to the wrong document. `markdownlint-cli2` and `prettier --check` clean and prettier verified idempotent; `cargo test --workspace`, `clippy --all-targets -D warnings`, `cargo-machete`, `cargo fmt --check`, `spec lint`, and `compat` unaffected and green. No Rust touched. |
+
+## 15. Cleanup registry
+
+Pre-existing bugs and tooling defects surfaced by a subtask, per the
+AGENTS.md "pre-existing bugs surfaced during a subtask" rule. Format
+matches `PLAN_05` §15.
+
+| ID        | Surface                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | Impact                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | Fix scope                                                                                     | Status |
+| --------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 08.2e-CU1 | Surfaced during 08.2e (`echo` sheet). The repository's `mixed-line-ending` pre-commit hook rewrites a lone CR to LF in any file it is given, including recorded spec fixtures under `tests/spec/`. The `echo_e_escapes` case originally asserted `echo -e` escape interpretation by emitting the control characters directly; its `.stdout` fixture therefore contained a legitimate `\r` byte, which the hook silently rewrote to `\n` — corrupting the fixture and then rejecting the commit. Fixtures are golden oracle data recorded from the pinned bash; no formatting hook should be allowed to edit them. The sibling `trailing-whitespace` and `end-of-file-fixer` hooks have the same hazard for any fixture whose expected output legitimately ends in whitespace or lacks a trailing newline (for example a `printf` case with no `\n`, or an `echo -n` case recorded without the `[END]` marker trick). | Medium, and the failure mode is silent-then-loud: the hook edits the fixture before the commit is rejected, so a careless re-stage commits a wrong golden value. It has already cost one drafting cycle. `printf` is the next batch-1 sheet (§10.1) and is the most escape-heavy builtin in the inventory, so it is the most likely next casualty; `read` (CRLF handling) and any future `\r`-bearing case are also exposed. 08.2e worked around it inside the case by comparing each `-e` result against its ANSI-C `$'...'` equivalent and emitting only printable `name=ok` tokens, which keeps the row's contract genuinely tested but is a per-case dodge, not a fix. | Exclude recorded fixtures from the whitespace/line-ending hooks: add `tests/spec/.\*\.(stdout | stderr | exit)$`to the`mixed-line-ending`, `trailing-whitespace`, and `end-of-file-fixer`excludes. The hook set comes from the upstream`FredSystems/pre-commit-checks`flake, which exposes`extraExcludes`(the same injection point 05.11-CU1 discusses), so this is a`flake.nix`change and needs no upstream work. Verify with a deliberate regression fixture containing a lone CR:`git commit`must leave the bytes untouched. Then re-record`echo_e_escapes` in its direct byte-emitting form and confirm the CR survives a commit round-trip, or keep the ANSI-C comparison form and note that the row is verified by equivalence — either is acceptable once the hook can no longer corrupt fixtures. | Open. Should be fixed before the `printf` sheet (08.2, sheet 6 of 10) so that sheet can record escape fixtures directly instead of reinventing the comparison dodge. Not blocking any already-landed sheet. Tracked here per the AGENTS.md "pre-existing bugs surfaced during a subtask" rule. |

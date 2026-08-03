@@ -95,6 +95,88 @@ Every sheet must carry the seven mandatory sections, in order:
 divergence is conditional — include it only when fredshell follows
 bash and POSIX disagrees.
 
+Sheets with no `wontfix` or no `defer` rows still carry §5 and §6;
+write `None. Every row in §3 is classified support.` rather than
+dropping the heading, because the linter requires all seven.
+
+### Probe bash; do not recall it
+
+AGENTS.md forbids guessing shell semantics. Every row must come from
+the pinned reference bash, which the devshell exports as
+`FREDSHELL_REFERENCE_BASH`:
+
+```sh
+"$FREDSHELL_REFERENCE_BASH" -c 'help <builtin>'
+env -i "$FREDSHELL_REFERENCE_BASH" --noprofile --norc -c '<probe>' | od -An -c
+```
+
+Probe under `env -i` when the behaviour could be
+environment-sensitive, because that is what the recorder does (see
+below). Pipe through `od` whenever the answer is about bytes —
+control characters, trailing newlines, and locale-dependent output
+are all invisible to the eye. If `FREDSHELL_REFERENCE_BASH` is unset
+you are not in the devshell: run `nix develop --impure` (or
+`direnv allow`) rather than substituting the system bash.
+
+### Writing corpus cases that actually record
+
+Cases are recorded with
+`cargo run -p xtask -- spec record <case>.case.toml`. The recorder
+spawns the pinned bash with `env_clear()` inside a sandbox, which
+constrains what a case may do. These are the constraints that have
+bitten in practice:
+
+- **No external commands.** With a cleared environment there is no
+  `PATH`, so every coreutils binary exits 127. Use shell builtins only:
+  `$(<file)` instead of `cat file`, `${PWD##*/}` instead of
+  `basename`, and parameter expansion instead of `sed`/`tr`.
+- **The locale is effectively `C`.** No `LANG`/`LC_*` is set, so
+  multibyte behaviour (`\u`/`\U` escapes, multibyte globs, collation)
+  does not reproduce. Classify locale-dependent rows `defer:5` and
+  leave them to the UTF-8/locale sheet (`PLAN_07` §2.2).
+- **Symlinks do not materialise.** The runner's
+  `copy_dir_recursive` skips them in v0, so a `.fs/` skeleton cannot
+  carry one. Behaviours that only differ in the presence of a symlink
+  must be `defer:3`, not `support` (see `cd` 3.8 / 3.9).
+- **Empty directories need a `.keep`.** git does not track empty
+  directories, so every leaf directory in a `<case>.fs/` skeleton
+  needs a tracked file in it.
+- **`[env]` has renamed fields.** `HOME` and `PATH` are dedicated
+  keys; anything else goes under `[env.extra]`. `$SANDBOX` in a value
+  is substituted with the sandbox root, which is how a case asserts
+  against an absolute path without hardcoding one.
+- **The `script` field processes escapes.** TOML `"""…"""` is a
+  _basic_ string, so `\t` becomes a real tab. Write `\\t` when bash
+  should receive the two characters `\t`.
+- **Never hand-write a fixture.** Record it, then read it back with
+  `od -An -c` and confirm it says what the row claims.
+
+### Fixtures are golden data — keep formatting hooks off them
+
+Recorded `.stdout` / `.stderr` / `.exit` files are oracle output, not
+source code. A fixture containing a lone CR is currently rewritten by
+the `mixed-line-ending` pre-commit hook, which corrupts it silently
+and then rejects the commit; `trailing-whitespace` and
+`end-of-file-fixer` are equally hazardous for output that
+legitimately ends in whitespace or lacks a final newline. This is
+tracked as cleanup `08.2e-CU1` in `PLAN_07` §15. Until it is fixed,
+prefer asserting such behaviour by comparison — capture the output
+and test it against an ANSI-C `$'…'` literal, emitting only printable
+tokens — and never re-stage a fixture a hook has just modified
+without re-reading its bytes.
+
+### Markdown that survives the formatter
+
+`prettier` runs on every commit and resolves CommonMark emphasis
+before code spans. An unbackticked `PLAN_07` in prose opens an
+emphasis run on its underscore, and prettier then re-pairs the
+surrounding backtick delimiters — which rewrites `PLAN_07` to
+`PLAN*07`, mangles nearby globs such as `echo_*.case.toml`, and eats
+the spaces around later code spans. Backtick every `PLAN_NN`, path,
+and glob, in prose and in table cells alike. After editing, run
+`prettier --write` then re-read the changed lines to confirm they
+survived.
+
 ## Sheet status
 
 The `Status` line at the top of each sheet is one of (PLAN_07 §9):
