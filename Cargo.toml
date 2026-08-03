@@ -76,7 +76,7 @@ syn = { version = "=2.0.118", features = ["full"] }
 libc = "=0.2.186"
 
 # xtask helpers
-base64 = "=0.22.1"
+base64 = "=0.23.0"
 duct = "=1.1.1"
 
 # Test helpers
