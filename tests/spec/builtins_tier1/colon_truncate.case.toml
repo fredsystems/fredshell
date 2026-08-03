@@ -1,0 +1,8 @@
+description = "`: > file` performs its redirections, truncating file to zero length"
+script = """
+printf seed > f
+: > f
+echo "after=[$(<f)]"
+"""
+status = "deferred:PLAN_12"
+tags = ["builtin", "colon"]

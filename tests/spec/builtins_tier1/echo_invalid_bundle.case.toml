@@ -1,0 +1,6 @@
+description = "`echo -nx hi` stops option parsing at an invalid bundle and prints -nx literally"
+script = """
+echo -nx hi
+"""
+status = "deferred:PLAN_12"
+tags = ["builtin", "echo"]

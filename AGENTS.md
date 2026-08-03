@@ -90,14 +90,15 @@ the code is a scaffold. Read the planning documents first.
 
 The workspace currently contains:
 
-| Crate                   | Role                                                                       | `anyhow` allowed? |
-| ----------------------- | -------------------------------------------------------------------------- | ----------------- |
-| `fredshell`             | Binary entrypoint, CLI, line editor, reference event-stream consumer       | Yes               |
-| `fredshell-core`        | Embeddable shell library: builtins, exec, state, event stream (ADR 0006)   | No                |
-| `fredshell-parser`      | Native bash parser: lexer, AST, error recovery (owned by `PLAN_11`)        | No                |
-| `fredshell-prompt`      | Starship-style prompt renderer                                             | No                |
-| `fredshell-spec-runner` | Spec harness: loads `*.case.toml`, runs against fredshell, compares output | No                |
-| `xtask`                 | Build/CI orchestration                                                     | Yes               |
+| Crate                   | Role                                                                          | `anyhow` allowed? |
+| ----------------------- | ----------------------------------------------------------------------------- | ----------------- |
+| `fredshell`             | Binary entrypoint, CLI, line editor, reference event-stream consumer          | Yes               |
+| `fredshell-core`        | Embeddable shell library: builtins, exec, state, event stream (ADR 0006)      | No                |
+| `fredshell-parser`      | Native bash parser: lexer, AST, error recovery (owned by `PLAN_11`)           | No                |
+| `fredshell-prompt`      | Starship-style prompt renderer                                                | No                |
+| `fredshell-spec-macros` | `refuse!` proc-macro: compile-time spec-sheet validation (owned by `PLAN_07`) | No                |
+| `fredshell-spec-runner` | Spec harness: loads `*.case.toml`, runs against fredshell, compares output    | No                |
+| `xtask`                 | Build/CI orchestration                                                        | Yes               |
 
 The `fredshell-parser` crate does not yet exist in the workspace; the row is
 reserved by `PLAN_11_parser.md` and will be created when that plan is drafted and
@@ -118,6 +119,13 @@ Crates may only depend downward in the table above:
 - `fredshell-core` may depend on `fredshell-parser` (downward).
 - `fredshell-parser` may not depend on `fredshell-core` (would invert the
   parse-then-execute layering).
+- `fredshell-spec-macros` is a leaf proc-macro crate: it has no production
+  dependency on any other workspace crate. `fredshell-core` depends on it
+  (downward); the macro's expansion references `fredshell-core` types by path
+  only, not by a compile-time dependency. The crate carries a test-only
+  (`dev-dependency`) cycle back to `fredshell-core` for the `refuse!` expansion
+  tests, which Cargo permits because dev-dependencies never enter a production
+  graph.
 - Library crates must not depend on `xtask`.
 
 If a change requires an upward dependency, stop and discuss — it indicates a

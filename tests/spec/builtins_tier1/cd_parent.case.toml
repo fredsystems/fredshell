@@ -1,0 +1,8 @@
+description = "`cd ..` moves to the parent directory"
+script = """
+cd x/y
+cd ..
+echo "${PWD##*/}"
+"""
+status = "deferred:PLAN_12"
+tags = ["builtin", "cd"]

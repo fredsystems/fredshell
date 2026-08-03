@@ -26,9 +26,12 @@
 //! 4. Execution happens in a fresh [`Sandbox`] with an `<case>.fs/`
 //!    skeleton materialized (if present) and the case's `[env]`
 //!    block resolved against the sandbox root.
-//! 5. The bash process is invoked as `bash -c <script>`, with the
-//!    environment scrubbed and replaced by the resolved env. CWD is
-//!    the sandbox root.
+//! 5. The bash process is invoked as `bash -c <script> bash`, with
+//!    the environment scrubbed and replaced by the resolved env. CWD
+//!    is the sandbox root. The trailing `bash` argument sets `$0` so
+//!    bash's diagnostics are prefixed with a stable, path-free name
+//!    instead of the pinned bash's absolute store path (see
+//!    [`REFERENCE_ARGV0`]).
 //! 6. Sidecar files are written following `PLAN_05` §3.2's "present
 //!    explicitly when non-default" rule:
 //!    - Non-empty stdout → write `<stem>.stdout`; empty → delete it
@@ -56,6 +59,39 @@ use super::{parse_reference, REFERENCE_DOC};
 pub struct RecordArgs {
     /// Path to the `.case.toml` to record fixtures for.
     pub case: PathBuf,
+}
+
+/// The `$0` passed to `bash -c <script> <argv0>` when recording.
+///
+/// bash prefixes this onto every diagnostic it prints. A fixed,
+/// path-free name keeps recorded `.stderr` fixtures portable across
+/// machines and stable across nixpkgs bumps; the alternative (bash's
+/// absolute store path) is not. `bash` is the conventional name a
+/// script sees for `$0` when invoked via `bash -c`.
+pub const REFERENCE_ARGV0: &str = "bash";
+
+/// Build the `Command` used to invoke the pinned reference bash.
+///
+/// Shared by the recorder and by its regression test so the two cannot
+/// drift: the test asserts the resulting diagnostics carry a stable
+/// `$0`, which holds only because this function passes
+/// [`REFERENCE_ARGV0`]. Constructing the command separately in the test
+/// would let the assertion keep passing after the recorder stopped
+/// setting `$0`.
+///
+/// The argument after the script becomes bash's `$0`, which it prefixes
+/// onto every diagnostic (e.g.
+/// `bash: line 1: cd: nope: No such file or directory`). Without it
+/// `$0` is the pinned bash's absolute `/nix/store/…` path, which the
+/// recorder would bake into committed `.stderr` fixtures. See `PLAN_05`
+/// §4.4.
+///
+/// The environment is cleared here; callers add whatever a case
+/// declares.
+fn reference_bash_command(bash_path: &str, script: &str) -> Command {
+    let mut cmd = Command::new(bash_path);
+    cmd.arg("-c").arg(script).arg(REFERENCE_ARGV0).env_clear();
+    cmd
 }
 
 /// Entry point for `cargo xtask spec record`.
@@ -105,10 +141,9 @@ pub fn run(args: &RecordArgs) -> Result<()> {
     }
     let resolved_env = sandbox.resolve_env(&case.env);
 
-    let output = Command::new(&bash_path)
-        .arg("-c")
-        .arg(&case.script)
-        .env_clear()
+    // `$0` and the cleared environment are set by the shared helper so
+    // the regression test cannot drift from the real invocation.
+    let output = reference_bash_command(&bash_path, &case.script)
         .envs(&resolved_env)
         .current_dir(sandbox.root())
         .output()
@@ -369,5 +404,58 @@ mod tests {
         fs::write(&p, "7\n").unwrap();
         let action = write_or_remove_exit(&p, 7).unwrap();
         assert_eq!(action, SidecarAction::Unchanged);
+    }
+
+    /// Regression test for the store-path-in-stderr bug: invoking the
+    /// pinned reference bash with [`REFERENCE_ARGV0`] as `$0` must
+    /// produce diagnostics prefixed with `bash:`, never the bash
+    /// binary's absolute path. Without the `$0` argument the recorder
+    /// baked `/nix/store/<hash>-bash-…/bin/bash` into committed
+    /// `.stderr` fixtures, which are non-portable.
+    ///
+    /// Goes through [`reference_bash_command`], the same constructor the
+    /// recorder uses, so that dropping the `$0` argument from production
+    /// fails this test. Building a `Command` here instead would only
+    /// assert that bash honours `$0` when given one, which it always
+    /// does — the assertion would survive the regression it guards.
+    ///
+    /// Needs the pinned bash, which only the nix devshell provides. The
+    /// CI matrix also runs `cargo test --workspace` on bare runners that
+    /// have no devshell (see `.github/workflows/ci.yml`), so this cannot
+    /// hard-require the variable. It instead fails when the devshell is
+    /// present but the variable is not — a broken devshell — and skips
+    /// with an explicit notice otherwise. The `Nix devShell checks` job
+    /// does export it, so the regression stays guarded in CI rather than
+    /// being quietly skipped everywhere.
+    #[test]
+    fn recorded_diagnostics_use_stable_argv0_not_store_path() {
+        let Ok(bash) = std::env::var("FREDSHELL_REFERENCE_BASH") else {
+            assert!(
+                std::env::var_os("IN_NIX_SHELL").is_none(),
+                "inside the nix devshell but FREDSHELL_REFERENCE_BASH is unset; \
+                 the devshell is misconfigured"
+            );
+            println!(
+                "skipping: FREDSHELL_REFERENCE_BASH is unset and no nix devshell \
+                 is active; run inside `nix develop --impure` to exercise this test"
+            );
+            return;
+        };
+
+        // A builtin that emits a diagnostic to stderr with a non-zero
+        // exit, needing no external command or PATH.
+        let output = reference_bash_command(&bash, "cd /nonexistent_dir_for_argv0_test")
+            .output()
+            .unwrap();
+
+        let stderr = String::from_utf8(output.stderr).unwrap();
+        assert!(
+            !stderr.contains("/nix/store"),
+            "recorded stderr must not contain an absolute store path; got: {stderr:?}"
+        );
+        assert!(
+            stderr.starts_with("bash:"),
+            "recorded diagnostics must be prefixed with the stable `$0`; got: {stderr:?}"
+        );
     }
 }

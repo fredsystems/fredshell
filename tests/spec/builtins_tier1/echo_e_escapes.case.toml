@@ -1,0 +1,27 @@
+description = "`echo -e` interprets the C-style escape set to their control characters"
+# Each escape is compared against its ANSI-C (`$'...'`) equivalent and only a
+# printable `name=ok` token is emitted. Emitting the control bytes directly
+# would put a raw CR into the recorded fixture, which the repository's
+# `mixed-line-ending` pre-commit hook rewrites to LF and thereby corrupts.
+script = """
+tab=$(echo -e "a\\tb")
+[ "$tab" = $'a\\tb' ] && echo "tab=ok" || echo "tab=FAIL"
+nl=$(echo -e "a\\nb")
+[ "$nl" = $'a\\nb' ] && echo "nl=ok" || echo "nl=FAIL"
+cr=$(echo -e "a\\rb")
+[ "$cr" = $'a\\rb' ] && echo "cr=ok" || echo "cr=FAIL"
+bell=$(echo -e "a\\ab")
+[ "$bell" = $'a\\ab' ] && echo "bell=ok" || echo "bell=FAIL"
+backspace=$(echo -e "a\\bb")
+[ "$backspace" = $'a\\bb' ] && echo "backspace=ok" || echo "backspace=FAIL"
+esc=$(echo -e "a\\eb")
+[ "$esc" = $'a\\eb' ] && echo "esc=ok" || echo "esc=FAIL"
+formfeed=$(echo -e "a\\fb")
+[ "$formfeed" = $'a\\fb' ] && echo "formfeed=ok" || echo "formfeed=FAIL"
+vtab=$(echo -e "a\\vb")
+[ "$vtab" = $'a\\vb' ] && echo "vtab=ok" || echo "vtab=FAIL"
+bs=$(echo -e 'a\\\\b')
+[ "$bs" = 'a\\b' ] && echo "backslash=ok" || echo "backslash=FAIL"
+"""
+status = "deferred:PLAN_12"
+tags = ["builtin", "echo"]

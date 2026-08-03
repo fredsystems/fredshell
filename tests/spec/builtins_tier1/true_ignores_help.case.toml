@@ -1,0 +1,9 @@
+description = "`true --help` / `true --version` are ignored by the builtin and exit 0"
+script = """
+true --help
+echo "help=$?"
+true --version
+echo "version=$?"
+"""
+status = "deferred:PLAN_12"
+tags = ["builtin", "true"]

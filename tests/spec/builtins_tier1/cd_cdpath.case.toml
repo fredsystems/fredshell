@@ -1,0 +1,13 @@
+description = "`cd dir` searches CDPATH before $PWD, so a CDPATH entry shadows ./dir"
+# The sandbox contains BOTH `./target` and `$CDPATH/target`. If CDPATH were
+# only consulted as a fallback, this would land in `./target` and print
+# `relative`; bash searches CDPATH first, so it prints `cdpath`.
+script = """
+cd target >/dev/null
+echo "landed=$(<marker)"
+"""
+status = "deferred:PLAN_12"
+tags = ["builtin", "cd"]
+
+[env.extra]
+CDPATH = "$SANDBOX/base"

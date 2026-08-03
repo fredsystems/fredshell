@@ -1,0 +1,26 @@
+[package]
+name = "fredshell-spec-macros"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Proc-macros tying fredshell builtins to spec sheets (PLAN_07 §8.2)"
+
+[lib]
+proc-macro = true
+
+[lints]
+workspace = true
+
+[dependencies]
+proc-macro2.workspace = true
+quote.workspace = true
+syn.workspace = true
+
+[dev-dependencies]
+# Cyclic dev-dependency: `refuse!` expands to `::fredshell_core::Refusal`,
+# so the expansion integration tests need the core types. Cargo permits
+# dev-dependency cycles (core depends on this crate normally). This edge
+# is test-only and never reaches a production dependency graph.
+fredshell-core = { workspace = true }
+trybuild = { workspace = true }

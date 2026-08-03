@@ -1,0 +1,7 @@
+description = "`true a b c` ignores all operands and still returns exit status 0"
+script = """
+true a b c
+echo "exit=$?"
+"""
+status = "deferred:PLAN_12"
+tags = ["builtin", "true"]

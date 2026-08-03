@@ -1,0 +1,6 @@
+description = "`echo -- --help -x` prints --, --help, and -x verbatim (no end-of-options / help handling)"
+script = """
+echo -- --help -x
+"""
+status = "deferred:PLAN_12"
+tags = ["builtin", "echo"]

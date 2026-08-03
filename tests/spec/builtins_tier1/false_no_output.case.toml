@@ -1,0 +1,7 @@
+description = "`false` writes nothing to stdout or stderr"
+script = """
+false --help --version foo > out 2> err
+echo "out=[$(<out)] err=[$(<err)]"
+"""
+status = "deferred:PLAN_12"
+tags = ["builtin", "false"]

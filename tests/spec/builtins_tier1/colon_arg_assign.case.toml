@@ -1,0 +1,7 @@
+description = "`: \"${var=word}\"` expands its arguments, so the assignment side effect occurs"
+script = """
+: "${x=assigned}"
+echo "x=$x"
+"""
+status = "deferred:PLAN_12"
+tags = ["builtin", "colon"]

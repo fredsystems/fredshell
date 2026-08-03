@@ -1,0 +1,7 @@
+description = "`true` returns exit status 0"
+script = """
+true
+echo "exit=$?"
+"""
+status = "deferred:PLAN_12"
+tags = ["builtin", "true"]

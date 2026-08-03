@@ -1,0 +1,6 @@
+description = "`cd` into a nonexistent directory fails with exit status 1"
+script = """
+cd nope
+"""
+status = "deferred:PLAN_12"
+tags = ["builtin", "cd", "diagnostic"]

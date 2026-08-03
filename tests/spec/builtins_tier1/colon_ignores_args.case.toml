@@ -1,0 +1,7 @@
+description = "`: a b c` discards its operands, writes nothing, and returns exit status 0"
+script = """
+: a b c > out 2> err
+echo "exit=$? out=[$(<out)] err=[$(<err)]"
+"""
+status = "deferred:PLAN_12"
+tags = ["builtin", "colon"]

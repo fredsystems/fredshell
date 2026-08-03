@@ -1,0 +1,7 @@
+description = "`echo -ne x` parses bundled options as a single -ne group"
+script = """
+echo -ne "x\\ty"
+echo "[END]"
+"""
+status = "deferred:PLAN_12"
+tags = ["builtin", "echo"]

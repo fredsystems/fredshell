@@ -1,0 +1,7 @@
+description = "`echo -e \"keep\\cdrop\"` halts output at \\c, suppressing the rest and the trailing newline"
+script = """
+echo -e "keep\\cdrop"
+echo "[END]"
+"""
+status = "deferred:PLAN_12"
+tags = ["builtin", "echo"]

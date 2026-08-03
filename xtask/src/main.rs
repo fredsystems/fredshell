@@ -11,6 +11,7 @@
 //!   coverage  — cargo llvm-cov producing lcov.info
 //!   compat    — bash-compat spec corpus driver (`PLAN_05` 05.6)
 //!   spec      — bash-compat spec harness subcommands (`PLAN_05`)
+//!   check-specs — spec-sheet cross-reference checker (`PLAN_07` 08.4)
 //!   tty-probe — open a `TerminalSession` against the developer's real
 //!               controlling terminal and print the detected
 //!               `Capabilities` + initial `WindowSize`. Per `PLAN_04`
@@ -22,6 +23,7 @@ use color_eyre::eyre::{bail, Result};
 use duct::cmd;
 use fredshell_core::tty::TerminalSession;
 
+mod check_specs;
 mod compat;
 mod spec;
 
@@ -55,6 +57,9 @@ enum Cmd {
     /// Run the bash-compat spec corpus and emit a verdict report
     /// (`PLAN_05` 05.6).
     Compat(compat::CompatArgs),
+    /// Cross-reference the spec sheets under `Documents/specs/`
+    /// against the corpus (`PLAN_07` 08.4).
+    CheckSpecs,
 }
 
 fn main() -> Result<()> {
@@ -103,6 +108,9 @@ fn main() -> Result<()> {
         }
         Cmd::Compat(args) => {
             compat::run(&args)?;
+        }
+        Cmd::CheckSpecs => {
+            check_specs::run()?;
         }
     }
 

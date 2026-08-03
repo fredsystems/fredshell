@@ -193,7 +193,7 @@ fn dispatch_line(line: &str, env: &mut ExecEnv) -> Result<LineOutcome, RunError>
         }
     };
 
-    match builtins::try_run(&argv).map_err(|e| RunError::Exec(core_error_to_exec(e)))? {
+    match builtins::try_run(&argv, env).map_err(|e| RunError::Exec(core_error_to_exec(e)))? {
         Some(BuiltinOutcome::Exit(code)) => Ok(LineOutcome::Exit(ExitStatus(code))),
         Some(BuiltinOutcome::Handled(code)) => Ok(LineOutcome::Continue(ExitStatus(code))),
         None => match env.external_command_policy {
@@ -220,6 +220,11 @@ fn spawn_via_sh(line: &str, env: &mut ExecEnv) -> Result<ExitStatus, RunError> {
     let mut cmd = Command::new("/bin/sh");
     cmd.arg("-c")
         .arg(line)
+        // Run the child in the shell's working directory, not the
+        // host process's. The `cd` builtin mutates `env.cwd` (not the
+        // global process cwd), so external commands must inherit
+        // `env.cwd` for `cd foo; ls` to behave correctly.
+        .current_dir(&env.cwd)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
 
@@ -417,52 +422,118 @@ mod tests {
     }
 
     #[test]
-    fn cd_builtin_changes_process_cwd_and_subsequent_pwd_sees_it() {
-        // The `cd` builtin mutates process-global cwd; serialise.
+    fn cd_builtin_updates_env_cwd_without_touching_process_cwd() {
+        // The `cd` builtin updates `env.cwd` only; it must NOT mutate
+        // the process-global cwd. We still take the lock because
+        // `pwd` via `/bin/sh` and the process-cwd snapshot are global
+        // observations.
         let _guard = lock();
 
-        let tmp = std_env::temp_dir().join("fredshell-06a5-cd-test");
+        let tmp = std_env::temp_dir().join("fredshell-cd-env-cwd-test");
         fs::create_dir_all(&tmp).expect("create tmp");
-        let original = std_env::current_dir().expect("snapshot cwd");
+        let process_cwd_before = std_env::current_dir().expect("snapshot cwd");
+        let canonical_tmp = fs::canonicalize(&tmp).unwrap_or_else(|_| tmp.clone());
 
         let mut env = sandbox();
         let captured =
             testing::run_source_capturing(&format!("cd {}\npwd\n", tmp.display()), &mut env)
                 .expect("ok");
 
-        // Canonicalise the expected path *before* removing the
-        // directory: on macOS /var is a symlink to /private/var, and
-        // `pwd` emits the resolved form. `canonicalize` requires the
-        // path to exist, so it must run before `remove_dir` — doing
-        // it afterwards silently fell back to the unresolved path and
-        // failed the comparison on macOS.
-        let rhs = fs::canonicalize(&tmp).unwrap_or_else(|_| tmp.clone());
+        // The builtin must not have changed the process cwd.
+        let process_cwd_after = std_env::current_dir().expect("cwd after");
 
-        // Restore before asserting so a failure does not poison other
-        // tests.
-        std_env::set_current_dir(&original).expect("restore cwd");
-        fs::remove_dir(&tmp).ok();
-
-        assert_eq!(captured.result.status, ExitStatus::SUCCESS);
-        // pwd output should match the tmp directory.
+        // Derive everything that touches the filesystem *before* the
+        // directory is removed. Canonicalizing after the removal would
+        // always fail, so the `unwrap_or` fallback would silently keep
+        // the raw `pwd` output and the final assertion would compare an
+        // unresolved path against a canonical one.
+        let status = captured.result.status;
+        let env_cwd = env.cwd.clone();
         let pwd_out = String::from_utf8(captured.stdout).expect("utf-8");
         let pwd_path = PathBuf::from(pwd_out.trim());
-        let lhs = fs::canonicalize(&pwd_path).unwrap_or(pwd_path);
-        assert_eq!(lhs, rhs);
+        let pwd_canon = fs::canonicalize(&pwd_path)
+            .expect("pwd output must resolve while the directory still exists");
+
+        // Clean up before asserting so a failure cannot leak the dir.
+        fs::remove_dir(&tmp).ok();
+
+        assert_eq!(
+            process_cwd_before, process_cwd_after,
+            "cd builtin must not mutate the global process cwd"
+        );
+        assert_eq!(status, ExitStatus::SUCCESS);
+        // env.cwd was updated to the canonicalized destination.
+        assert_eq!(env_cwd, canonical_tmp);
+        // `pwd` (spawned via /bin/sh with current_dir = env.cwd) sees
+        // the new directory.
+        assert_eq!(pwd_canon, canonical_tmp);
     }
 
     #[test]
-    fn cd_to_nonexistent_directory_returns_status_one() {
+    fn cd_resolves_relative_target_against_env_cwd() {
         let _guard = lock();
 
-        let original = std_env::current_dir().expect("snapshot");
-        let mut env = sandbox();
-        let captured =
-            testing::run_source_capturing("cd /this/path/does/not/exist/fredshell-06a5", &mut env)
-                .expect("ok");
-        std_env::set_current_dir(&original).expect("restore");
+        let base = std_env::temp_dir().join("fredshell-cd-relative-test");
+        let child = base.join("child");
+        fs::create_dir_all(&child).expect("create child");
+        let canonical_child = fs::canonicalize(&child).unwrap_or_else(|_| child.clone());
 
-        assert_eq!(captured.result.status, ExitStatus(1));
+        // Start the shell in `base`; `cd child` must resolve against
+        // env.cwd, not the process cwd.
+        let mut env = ExecEnv::sandboxed(fs::canonicalize(&base).unwrap_or_else(|_| base.clone()));
+        env.external_command_policy = ExternalCommandPolicy::Strict;
+        let outcome = builtins::try_run(&["cd".to_owned(), "child".to_owned()], &mut env)
+            .expect("ok")
+            .expect("handled");
+
+        fs::remove_dir_all(&base).ok();
+
+        assert!(matches!(outcome, BuiltinOutcome::Handled(0)));
+        assert_eq!(env.cwd, canonical_child);
+    }
+
+    #[test]
+    fn cd_to_nonexistent_directory_returns_status_one_and_writes_diagnostic() {
+        // Strict env: no /bin/sh fallback, no global lock needed
+        // because the builtin no longer touches process state.
+        let mut env = ExecEnv::sandboxed(PathBuf::from("/tmp"));
+        env.external_command_policy = ExternalCommandPolicy::Strict;
+        let stderr = testing::SharedBuf::new();
+        env.stderr = Box::new(stderr.clone());
+
+        let outcome = builtins::try_run(
+            &[
+                "cd".to_owned(),
+                "/this/path/does/not/exist/fredshell".to_owned(),
+            ],
+            &mut env,
+        )
+        .expect("ok")
+        .expect("handled");
+
+        assert!(matches!(outcome, BuiltinOutcome::Handled(1)));
+        let diag = String::from_utf8(stderr.take()).expect("utf-8");
+        assert!(
+            diag.starts_with("cd: /this/path/does/not/exist/fredshell:"),
+            "diagnostic must name the target; got {diag:?}"
+        );
+    }
+
+    #[test]
+    fn cd_without_home_writes_home_not_set() {
+        let mut env = ExecEnv::sandboxed(PathBuf::from("/tmp"));
+        env.external_command_policy = ExternalCommandPolicy::Strict;
+        env.env.clear(); // no HOME
+        let stderr = testing::SharedBuf::new();
+        env.stderr = Box::new(stderr.clone());
+
+        let outcome = builtins::try_run(&["cd".to_owned()], &mut env)
+            .expect("ok")
+            .expect("handled");
+
+        assert!(matches!(outcome, BuiltinOutcome::Handled(1)));
+        let diag = String::from_utf8(stderr.take()).expect("utf-8");
+        assert_eq!(diag, "cd: HOME not set\n");
     }
 
     #[test]

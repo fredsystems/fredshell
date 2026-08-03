@@ -1,0 +1,7 @@
+description = "`cd dir` changes the working directory to `dir`"
+script = """
+cd sub
+echo "${PWD##*/}"
+"""
+status = "deferred:PLAN_12"
+tags = ["builtin", "cd"]
