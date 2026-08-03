@@ -68,7 +68,7 @@ fredshell-spec-macros = { version = "=0.1.0", path = "crates/fredshell-spec-macr
 fredshell-spec-runner = { version = "=0.1.0", path = "crates/fredshell-spec-runner" }
 
 # Proc-macro toolchain
-proc-macro2 = "=1.0.106"
+proc-macro2 = "=1.0.107"
 quote = "=1.0.46"
 syn = { version = "=2.0.118", features = ["full"] }
 
