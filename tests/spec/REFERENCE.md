@@ -21,7 +21,7 @@ any affected fixtures in the same commit.
 [reference]
 bash = "5.3p15"
 coreutils = "9.11"
-nixpkgs_rev = "52eeb0a3222c9f93f6ed7325371185ac8180e3d9"
+nixpkgs_rev = "aec71e3ada2e0b6bebd3d84c01523eb137dff06f"
 nixpkgs_input = "nixpkgs-reference"
 pinned_on = "2026-08-03"
 ```

@@ -355,7 +355,7 @@ more prose
         // the upgrade policy in REFERENCE.md.
         assert_eq!(pin.bash, "5.3p15");
         assert_eq!(pin.coreutils, "9.11");
-        assert_eq!(pin.nixpkgs_rev, "52eeb0a3222c9f93f6ed7325371185ac8180e3d9");
+        assert_eq!(pin.nixpkgs_rev, "aec71e3ada2e0b6bebd3d84c01523eb137dff06f");
         assert_eq!(pin.nixpkgs_input, "nixpkgs-reference");
     }
 }
