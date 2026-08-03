@@ -441,20 +441,31 @@ mod tests {
 
         // The builtin must not have changed the process cwd.
         let process_cwd_after = std_env::current_dir().expect("cwd after");
+
+        // Derive everything that touches the filesystem *before* the
+        // directory is removed. Canonicalizing after the removal would
+        // always fail, so the `unwrap_or` fallback would silently keep
+        // the raw `pwd` output and the final assertion would compare an
+        // unresolved path against a canonical one.
+        let status = captured.result.status;
+        let env_cwd = env.cwd.clone();
+        let pwd_out = String::from_utf8(captured.stdout).expect("utf-8");
+        let pwd_path = PathBuf::from(pwd_out.trim());
+        let pwd_canon = fs::canonicalize(&pwd_path)
+            .expect("pwd output must resolve while the directory still exists");
+
+        // Clean up before asserting so a failure cannot leak the dir.
         fs::remove_dir(&tmp).ok();
 
         assert_eq!(
             process_cwd_before, process_cwd_after,
             "cd builtin must not mutate the global process cwd"
         );
-        assert_eq!(captured.result.status, ExitStatus::SUCCESS);
+        assert_eq!(status, ExitStatus::SUCCESS);
         // env.cwd was updated to the canonicalized destination.
-        assert_eq!(env.cwd, canonical_tmp);
+        assert_eq!(env_cwd, canonical_tmp);
         // `pwd` (spawned via /bin/sh with current_dir = env.cwd) sees
         // the new directory.
-        let pwd_out = String::from_utf8(captured.stdout).expect("utf-8");
-        let pwd_path = PathBuf::from(pwd_out.trim());
-        let pwd_canon = fs::canonicalize(&pwd_path).unwrap_or(pwd_path);
         assert_eq!(pwd_canon, canonical_tmp);
     }
 

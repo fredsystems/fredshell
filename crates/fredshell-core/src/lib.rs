@@ -15,6 +15,14 @@
 //! `anyhow::Result` at the application boundary via `?`, because
 //! [`CoreError`] implements [`std::error::Error`].
 
+// `fredshell_spec_macros::refuse!` expands to an absolute path,
+// `::fredshell_core::spec::Refusal`, so that embedders can invoke it
+// from any crate. Inside `fredshell-core` itself that path would
+// otherwise fail to resolve, making the first in-core `refuse!` a
+// confusing compile error. Aliasing the crate to its own name keeps
+// the macro usable here too. See PLAN_07 §8.2.
+extern crate self as fredshell_core;
+
 pub mod builtins;
 pub mod exec;
 pub mod parser;

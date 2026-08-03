@@ -1,5 +1,5 @@
 error: no spec sheet for `nonesuch` under Documents/specs/builtins/ or Documents/specs/features/
- --> tests/ui/missing_sheet.rs:5:30
-  |
-5 |     let _ = refuse!(wontfix, "nonesuch", "3.1");
-  |                              ^^^^^^^^^^
+  --> tests/ui/missing_sheet.rs:10:30
+   |
+10 |     let _ = refuse!(wontfix, "nonesuch", "3.1");
+   |                              ^^^^^^^^^^

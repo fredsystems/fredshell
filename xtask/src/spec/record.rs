@@ -70,6 +70,30 @@ pub struct RecordArgs {
 /// script sees for `$0` when invoked via `bash -c`.
 pub const REFERENCE_ARGV0: &str = "bash";
 
+/// Build the `Command` used to invoke the pinned reference bash.
+///
+/// Shared by the recorder and by its regression test so the two cannot
+/// drift: the test asserts the resulting diagnostics carry a stable
+/// `$0`, which holds only because this function passes
+/// [`REFERENCE_ARGV0`]. Constructing the command separately in the test
+/// would let the assertion keep passing after the recorder stopped
+/// setting `$0`.
+///
+/// The argument after the script becomes bash's `$0`, which it prefixes
+/// onto every diagnostic (e.g.
+/// `bash: line 1: cd: nope: No such file or directory`). Without it
+/// `$0` is the pinned bash's absolute `/nix/store/…` path, which the
+/// recorder would bake into committed `.stderr` fixtures. See `PLAN_05`
+/// §4.4.
+///
+/// The environment is cleared here; callers add whatever a case
+/// declares.
+fn reference_bash_command(bash_path: &str, script: &str) -> Command {
+    let mut cmd = Command::new(bash_path);
+    cmd.arg("-c").arg(script).arg(REFERENCE_ARGV0).env_clear();
+    cmd
+}
+
 /// Entry point for `cargo xtask spec record`.
 pub fn run(args: &RecordArgs) -> Result<()> {
     let bash_path = require_env("FREDSHELL_REFERENCE_BASH")?;
@@ -117,22 +141,9 @@ pub fn run(args: &RecordArgs) -> Result<()> {
     }
     let resolved_env = sandbox.resolve_env(&case.env);
 
-    let output = Command::new(&bash_path)
-        .arg("-c")
-        .arg(&case.script)
-        // The argument after the script becomes bash's `$0`, which it
-        // prefixes onto every diagnostic it prints (e.g.
-        // `bash: line 1: cd: nope: No such file or directory`).
-        // Without it, `$0` is the absolute path of the pinned bash
-        // (a `/nix/store/<hash>-bash-…/bin/bash` path), which the
-        // recorder would bake verbatim into committed `.stderr`
-        // fixtures — non-portable across machines and unstable across
-        // nixpkgs bumps. Passing a fixed name makes recorded
-        // diagnostics deterministic and matches what a real script
-        // sees for `$0`. See PLAN_05 §4.4 and the record-stderr
-        // regression test.
-        .arg(REFERENCE_ARGV0)
-        .env_clear()
+    // `$0` and the cleared environment are set by the shared helper so
+    // the regression test cannot drift from the real invocation.
+    let output = reference_bash_command(&bash_path, &case.script)
         .envs(&resolved_env)
         .current_dir(sandbox.root())
         .output()
@@ -402,23 +413,24 @@ mod tests {
     /// baked `/nix/store/<hash>-bash-…/bin/bash` into committed
     /// `.stderr` fixtures, which are non-portable.
     ///
-    /// Skipped when `FREDSHELL_REFERENCE_BASH` is absent (i.e. outside
-    /// the nix devshell), since the test needs the pinned bash.
+    /// Goes through [`reference_bash_command`], the same constructor the
+    /// recorder uses, so that dropping the `$0` argument from production
+    /// fails this test. Building a `Command` here instead would only
+    /// assert that bash honours `$0` when given one, which it always
+    /// does — the assertion would survive the regression it guards.
+    ///
+    /// Requires the pinned bash: `FREDSHELL_REFERENCE_BASH` is exported
+    /// by the nix devshell, which is where CI runs the suite. Panics
+    /// rather than returning early, because a silent skip would let the
+    /// regression ship unnoticed on any machine missing the variable.
     #[test]
     fn recorded_diagnostics_use_stable_argv0_not_store_path() {
-        let Ok(bash) = std::env::var("FREDSHELL_REFERENCE_BASH") else {
-            // No pinned bash available; nothing to assert. CI runs the
-            // full set inside the devshell.
-            return;
-        };
+        let bash = std::env::var("FREDSHELL_REFERENCE_BASH")
+            .expect("FREDSHELL_REFERENCE_BASH must be set; run inside `nix develop --impure`");
 
-        let output = Command::new(&bash)
-            .arg("-c")
-            // A builtin that emits a diagnostic to stderr with a
-            // non-zero exit, needing no external command or PATH.
-            .arg("cd /nonexistent_dir_for_argv0_test")
-            .arg(REFERENCE_ARGV0)
-            .env_clear()
+        // A builtin that emits a diagnostic to stderr with a non-zero
+        // exit, needing no external command or PATH.
+        let output = reference_bash_command(&bash, "cd /nonexistent_dir_for_argv0_test")
             .output()
             .unwrap();
 

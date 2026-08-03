@@ -125,9 +125,10 @@ pub struct Sheet {
     pub rows: Vec<SupportRow>,
     /// The `## N. <name>` headings encountered, in document order.
     pub sections: Vec<String>,
-    /// `true` when a non-empty `## 6. Deferred rows` body is present
-    /// (used by check 5).
-    pub has_deferred_body: bool,
+    /// The `## 6. Deferred rows` body text, joined with newlines.
+    /// Check 5 requires each `defer:N` row number to appear here, so
+    /// the prose is retained rather than reduced to a boolean.
+    pub deferred_body: String,
 }
 
 /// Errors surfaced while parsing a single sheet. Returned as
@@ -178,7 +179,7 @@ impl core::fmt::Display for SheetError {
 pub fn parse_sheet(id: &str, body: &str) -> Sheet {
     let mut rows: Vec<SupportRow> = Vec::new();
     let mut sections: Vec<String> = Vec::new();
-    let mut has_deferred_body = false;
+    let mut deferred_body = String::new();
 
     // Track which `## ` section we are currently inside so the §6
     // body scan does not pick up text from other sections.
@@ -193,10 +194,11 @@ pub fn parse_sheet(id: &str, body: &str) -> Sheet {
             continue;
         }
 
-        // §6 body detection: any non-blank line under the Deferred
+        // §6 body collection: any non-blank line under the Deferred
         // rows heading that is not itself a heading counts as body.
         if current_section.as_deref() == Some("## 6. Deferred rows") && !trimmed.is_empty() {
-            has_deferred_body = true;
+            deferred_body.push_str(trimmed);
+            deferred_body.push('\n');
         }
 
         if let Some(row) = parse_support_row(trimmed) {
@@ -208,7 +210,7 @@ pub fn parse_sheet(id: &str, body: &str) -> Sheet {
         id: id.to_owned(),
         rows,
         sections,
-        has_deferred_body,
+        deferred_body,
     }
 }
 
@@ -233,13 +235,17 @@ fn parse_support_row(line: &str) -> Option<SupportRow> {
     if !line.starts_with('|') {
         return None;
     }
-    // Split on `|`, dropping the empty leading/trailing fields that
-    // result from the surrounding pipes.
-    let cells: Vec<&str> = line
-        .split('|')
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .collect();
+    // Split on `|`, dropping only the empty leading/trailing fields
+    // produced by the surrounding pipes. Interior empty cells are
+    // retained: filtering them would shift later columns left and make
+    // a blank `Corpus` cell indistinguishable from a 3-column row.
+    let mut cells: Vec<&str> = line.split('|').map(str::trim).collect();
+    if cells.first().is_some_and(|s| s.is_empty()) {
+        cells.remove(0);
+    }
+    if cells.last().is_some_and(|s| s.is_empty()) {
+        cells.pop();
+    }
     // Expected columns: # | Behaviour | Classification | Corpus.
     if cells.len() < 4 {
         return None;
@@ -254,6 +260,21 @@ fn parse_support_row(line: &str) -> Option<SupportRow> {
         number: number.to_owned(),
         classification,
         corpus,
+    })
+}
+
+/// True when `body` cites `row` as a row number, e.g. `3.8` in
+/// "**3.8 / 3.9 — `-L` / `-P` …**".
+///
+/// The match is digit-boundary aware: a bare `contains` would let a
+/// §6 paragraph documenting only `3.13` satisfy a `defer` row `3.1`,
+/// so an occurrence followed by another digit or a further `.` does
+/// not count.
+fn mentions_row(body: &str, row: &str) -> bool {
+    body.match_indices(row).any(|(idx, _)| {
+        let after = body[idx + row.len()..].chars().next();
+        // Reject `3.1` matching inside `3.13` or `3.1.2`.
+        !matches!(after, Some(c) if c.is_ascii_digit() || c == '.')
     })
 }
 
@@ -302,7 +323,9 @@ pub fn validate_sheet_structure(sheet: &Sheet) -> Vec<SheetError> {
             });
         }
         // Check 5: every defer row needs a §6 workaround paragraph.
-        if matches!(row.classification, Classification::Defer(_)) && !sheet.has_deferred_body {
+        if matches!(row.classification, Classification::Defer(_))
+            && !mentions_row(&sheet.deferred_body, &row.number)
+        {
             errors.push(SheetError::MissingWorkaround {
                 row: row.number.clone(),
             });
@@ -746,6 +769,59 @@ mod tests {
         assert_eq!(d.classification, Classification::Defer("2".to_owned()));
     }
 
+    // --- mentions_row / interior cells (regression) ------------------
+
+    #[test]
+    fn mentions_row_requires_a_digit_boundary() {
+        // A §6 paragraph documenting only 3.13 must not satisfy row 3.1.
+        let body = "- **3.13 — Unicode escapes.** Deferred to milestone 5.\n";
+        assert!(mentions_row(body, "3.13"));
+        assert!(!mentions_row(body, "3.1"));
+    }
+
+    #[test]
+    fn mentions_row_accepts_a_row_cited_mid_sentence() {
+        let body = "- **3.8 / 3.9 — symlink resolution.** Deferred.\n";
+        assert!(mentions_row(body, "3.8"));
+        assert!(mentions_row(body, "3.9"));
+    }
+
+    #[test]
+    fn defer_row_without_its_own_workaround_is_rejected() {
+        // Two defer rows, but §6 documents only 3.2.
+        let body = concat!(
+            "## 1. Synopsis\n\nx\n\n## 2. Description\n\nx\n\n",
+            "## 3. Support matrix\n\n",
+            "| #   | Behaviour | Classification | Corpus |\n",
+            "| --- | --------- | -------------- | ------ |\n",
+            "| 3.1 | a         | defer:3        | n/a    |\n",
+            "| 3.2 | b         | defer:3        | n/a    |\n\n",
+            "## 4. Bash quirks\n\nx\n\n## 5. Wontfix rationale\n\nx\n\n",
+            "## 6. Deferred rows\n\n- **3.2 — b.** Use y for now.\n\n",
+            "## 8. References\n\nx\n",
+        );
+        let sheet = parse_sheet("x", body);
+        let errors = validate_sheet_structure(&sheet);
+        assert!(
+            errors.iter().any(|e| matches!(
+                e,
+                SheetError::MissingWorkaround { row } if row == "3.1"
+            )),
+            "expected a MissingWorkaround for 3.1, got {errors:?}"
+        );
+    }
+
+    #[test]
+    fn blank_corpus_cell_is_parsed_and_reported() {
+        // A blank interior Corpus cell must survive splitting so the
+        // empty-cell diagnostic is reachable, rather than the row being
+        // silently skipped as a 3-column line.
+        let row = parse_support_row("| 3.1 | cd dir | support |  |")
+            .expect("row with a blank Corpus cell should still parse");
+        assert_eq!(row.number, "3.1");
+        assert!(row.corpus.is_empty());
+    }
+
     // --- parse_sheet ------------------------------------------------
 
     #[test]
@@ -755,14 +831,14 @@ mod tests {
         assert_eq!(sheet.rows.len(), 1);
         assert_eq!(sheet.rows[0].number, "3.1");
         assert!(sheet.sections.contains(&"## 3. Support matrix".to_owned()));
-        assert!(sheet.has_deferred_body);
+        assert!(!sheet.deferred_body.is_empty());
     }
 
     #[test]
     fn parse_sheet_detects_empty_deferred_section() {
         let body = "## 1. Synopsis\n\nx\n\n## 6. Deferred rows\n\n## 8. References\n";
         let sheet = parse_sheet("x", body);
-        assert!(!sheet.has_deferred_body);
+        assert!(sheet.deferred_body.is_empty());
     }
 
     #[test]
@@ -869,7 +945,8 @@ mod tests {
              | 3.1 | `-e` | defer:2 | n/a |\n\n\
              ## 4. Bash quirks\n\nx\n\n\
              ## 5. Wontfix rationale\n\nx\n\n\
-             ## 6. Deferred rows\n\nUse `cd && ls` for now.\n\n\
+             ## 6. Deferred rows\n\n\
+             - **3.1 — `-e`.** Use `cd && ls` for now.\n\n\
              ## 8. References\n\nx\n";
         let sheet = parse_sheet("cd", body);
         assert!(validate_sheet_structure(&sheet).is_empty());

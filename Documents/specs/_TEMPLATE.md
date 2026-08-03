@@ -93,7 +93,7 @@ file bugs by quoting the row number.
 
 ## 6. Deferred rows
 
-For every `defer:N` row in §3, one paragraph plus a PLAN_16
+For every `defer:N` row in §3, one paragraph plus a `PLAN_19`
 milestone reference. The paragraph names the missing-feature
 dependency (e.g., "requires Tier-2 process accounting") and
 states the post-v1 reclassification target.

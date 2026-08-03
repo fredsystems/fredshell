@@ -33,7 +33,7 @@ classifications (PLAN_07 §5):
 - **`wontfix`** — fredshell refuses the invocation with a loud,
   deliberate error citing the sheet row.
 - **`defer:N`** — fredshell will support this, but not before
-  milestone `N` (a PLAN_16 milestone number).
+  milestone `N` (a `PLAN_19` milestone number).
 
 A sheet with an unclassified row is incomplete and cannot drive a
 PLAN_12 or PLAN_13 implementation subtask.
@@ -64,8 +64,12 @@ Documents/specs/
 ```
 
 Filenames are lowercase, underscored, single-token per concept. A
-builtin's filename is exactly its invocation name. A feature's
-filename is its bash-manual heading slug. Sheets are Markdown and
+builtin's filename is exactly its invocation name — except for the
+three punctuation-named builtins, which take a spelled-out ASCII
+name because the glyph breaks globbing and renders the
+`<sheet-id>-<row#>` refusal diagnostic as nonsense: `:` is
+`colon.md`, `.` is `dot.md`, and `[` is `bracket.md` (`PLAN_07`
+§3). A feature's filename is its bash-manual heading slug. Sheets are Markdown and
 are read by humans more than by tools; readability wins (PLAN_07
 §3).
 

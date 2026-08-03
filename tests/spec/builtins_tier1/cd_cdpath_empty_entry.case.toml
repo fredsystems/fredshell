@@ -1,0 +1,13 @@
+description = "An empty CDPATH entry denotes the current directory, restoring cwd-first order"
+# Same competing layout as cd_cdpath, but CDPATH has a leading colon. The
+# empty first entry means "current directory", so `./target` now wins and
+# this prints `relative` rather than `cdpath`.
+script = """
+cd target >/dev/null
+echo "landed=$(<marker)"
+"""
+status = "deferred:PLAN_12"
+tags = ["builtin", "cd"]
+
+[env.extra]
+CDPATH = ":$SANDBOX/base"

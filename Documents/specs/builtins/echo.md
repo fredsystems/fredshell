@@ -111,9 +111,14 @@ None. Every row in §3 is classified `support` or `defer`.
 
 ## 7. POSIX divergence
 
-POSIX `echo` does not define the `-n`, `-e`, or `-E` options at all:
-under a strict POSIX implementation, `echo -n` would print the
-string `-n`. Bash in its default mode honours `-n`/`-e`/`-E` as
+POSIX `echo` does not define the `-n`, `-e`, or `-E` options at all.
+It goes further and declares the behaviour undefined rather than
+specified: if the first operand is `-n`, or if any operand contains a
+backslash, POSIX says the results are **implementation-defined**. So a
+conforming implementation may print `-n` as a string, treat it as an
+option, or do something else — portable scripts therefore cannot rely
+on either reading, which is the real reason `printf` is preferred.
+Bash in its default mode honours `-n`/`-e`/`-E` as
 options (rows 3.3–3.6); under `set -o posix` _and_ `xpg_echo`, bash
 shifts toward the XPG behaviour where escapes are interpreted by
 default and options are not recognised. fredshell follows bash's

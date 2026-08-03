@@ -1,7 +1,15 @@
 description = "`echo` with no arguments writes a single newline"
+# `$(<out)` strips trailing newlines, so asserting `bytes=[]` would pass
+# whether echo wrote "\n" or nothing at all. Probe the file instead: `-s`
+# proves it is non-empty and the builtin read loop counts exactly one
+# line. `wc -c` would be clearer but the recorder clears the environment,
+# so no external coreutils binary is on PATH.
 script = """
 echo > out
-echo "bytes=[$(<out)]"
+[ -s out ] && nonempty=yes || nonempty=no
+n=0
+while IFS= read -r line; do n=$((n + 1)); done < out
+echo "nonempty=$nonempty lines=$n"
 """
 status = "deferred:PLAN_12"
 tags = ["builtin", "echo"]

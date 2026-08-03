@@ -48,7 +48,7 @@ pub enum RefusalKind {
     /// The behaviour will be implemented after a milestone
     /// (`PLAN_07` §5.3).
     Defer {
-        /// The `PLAN_16` milestone number after which the behaviour
+        /// The `PLAN_19` milestone number after which the behaviour
         /// lands (the `N` in `defer:N`).
         milestone: String,
         /// The human-readable milestone name shown in parentheses in
@@ -135,6 +135,23 @@ impl fmt::Display for Refusal {
 }
 
 impl std::error::Error for Refusal {}
+
+#[cfg(test)]
+mod in_core_refuse_tests {
+    //! Regression guard for the `extern crate self as fredshell_core`
+    //! alias in `lib.rs`. `refuse!` expands to the absolute path
+    //! `::fredshell_core::spec::Refusal`; without the alias this module
+    //! would not compile, and the breakage would only surface when
+    //! `PLAN_12` wired the first real in-core refusal.
+    use fredshell_spec_macros::refuse;
+
+    #[test]
+    fn refuse_expands_inside_fredshell_core() {
+        let r = refuse!(wontfix, "cd", "3.11");
+        assert_eq!(r.sheet_id, "cd");
+        assert_eq!(r.row, "3.11");
+    }
+}
 
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::expect_used)]

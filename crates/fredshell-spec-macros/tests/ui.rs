@@ -15,22 +15,24 @@
 //! The fixture spec root is injected via `FREDSHELL_SPECS_ROOT` so the
 //! macro resolves against `tests/specs/` rather than the workspace
 //! sheets.
+//!
+//! That injection needs no code here, and in particular no
+//! `std::env::set_var`: `build.rs` emits
+//! `cargo:rustc-env=FREDSHELL_SPECS_ROOT=<manifest>/tests/specs`, cargo
+//! puts that variable in this test binary's environment, and the
+//! `cargo` subprocess `trybuild` spawns — and in turn the `rustc` that
+//! expands `refuse!` — inherit it. A `set_var` call would be both
+//! redundant and, since edition 2024, `unsafe`, which AGENTS.md
+//! forbids. `find_specs_root` falls back to ascending from
+//! `CARGO_MANIFEST_DIR` when the override is unset *or does not name a
+//! directory*, so deleting `tests/specs/` silently retargets these
+//! tests at the real sheets — if these expectations start failing for
+//! no obvious reason, check that the fixture tree still exists.
 
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 #[test]
 fn ui() {
-    // Point the macro at the fixture sheet tree for the duration of
-    // the trybuild compilations. trybuild inherits this process's
-    // environment for the cargo subprocess it spawns.
-    let fixture_root = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/specs");
-    // SAFETY: single-threaded test entry; no other thread reads the
-    // environment concurrently. set_var is the supported way to pass
-    // configuration to the trybuild subprocess.
-    unsafe {
-        std::env::set_var("FREDSHELL_SPECS_ROOT", fixture_root);
-    }
-
     let t = trybuild::TestCases::new();
     t.compile_fail("tests/ui/*.rs");
 }

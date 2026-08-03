@@ -1,5 +1,5 @@
 error: expected `wontfix` or `defer`, found `maybe`
- --> tests/ui/bad_form.rs:5:21
-  |
-5 |     let _ = refuse!(maybe, "cd", "3.1");
-  |                     ^^^^^
+  --> tests/ui/bad_form.rs:10:21
+   |
+10 |     let _ = refuse!(maybe, "cd", "3.1");
+   |                     ^^^^^

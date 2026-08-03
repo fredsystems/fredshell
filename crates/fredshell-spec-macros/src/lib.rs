@@ -157,7 +157,13 @@ fn expand(input: &RefuseInput) -> syn::Result<proc_macro2::TokenStream> {
             let row_s = resolved.row;
             let summary = resolved.summary;
             let sheet_path = resolved.sheet_path;
+            let sheet_abs = resolved.sheet_abs_path;
             Ok(quote! {
+                {
+                // Register the sheet as a compile-time input so editing
+                // it rebuilds this crate and re-validates the row
+                // (PLAN_07 §8.2). The bytes themselves are unused.
+                const _: &[u8] = include_bytes!(#sheet_abs);
                 ::fredshell_core::Refusal {
                     sheet_id: #sheet_id_s.to_owned(),
                     row: #row_s.to_owned(),
@@ -165,6 +171,7 @@ fn expand(input: &RefuseInput) -> syn::Result<proc_macro2::TokenStream> {
                     sheet_path: #sheet_path.to_owned(),
                     section: #row_s.to_owned(),
                     kind: ::fredshell_core::RefusalKind::Wontfix,
+                }
                 }
             })
         }
@@ -185,9 +192,15 @@ fn expand(input: &RefuseInput) -> syn::Result<proc_macro2::TokenStream> {
             let row_s = resolved.row;
             let summary = resolved.summary;
             let sheet_path = resolved.sheet_path;
+            let sheet_abs = resolved.sheet_abs_path;
             let milestone_name_s = milestone_name.value();
             let workaround_s = workaround.value();
             Ok(quote! {
+                {
+                // Register the sheet as a compile-time input so editing
+                // it rebuilds this crate and re-validates the row
+                // (PLAN_07 §8.2). The bytes themselves are unused.
+                const _: &[u8] = include_bytes!(#sheet_abs);
                 ::fredshell_core::Refusal {
                     sheet_id: #sheet_id_s.to_owned(),
                     row: #row_s.to_owned(),
@@ -200,6 +213,7 @@ fn expand(input: &RefuseInput) -> syn::Result<proc_macro2::TokenStream> {
                         workaround: #workaround_s.to_owned(),
                     },
                 }
+                }
             })
         }
     }
@@ -211,6 +225,9 @@ struct Resolved {
     row: String,
     summary: String,
     sheet_path: String,
+    /// Absolute path to the sheet, used only to emit the
+    /// `include_bytes!` that registers it as a compile-time dependency.
+    sheet_abs_path: String,
     /// `Some(N)` for a `defer:N` row, `None` for `wontfix`.
     milestone: Option<String>,
 }
@@ -223,7 +240,8 @@ fn resolve(sheet_id: &LitStr, row: &LitStr, want: WantClass) -> syn::Result<Reso
     let id = sheet_id.value();
     let row_no = row.value();
 
-    let (sheet_path, body) = read_sheet(&id).map_err(|e| syn::Error::new(sheet_id.span(), e))?;
+    let (sheet_path, sheet_abs_path, body) =
+        read_sheet(&id).map_err(|e| syn::Error::new(sheet_id.span(), e))?;
 
     let table = sheet::parse_support_matrix(&body);
     let parsed_row = table.iter().find(|r| r.number == row_no).ok_or_else(|| {
@@ -239,6 +257,7 @@ fn resolve(sheet_id: &LitStr, row: &LitStr, want: WantClass) -> syn::Result<Reso
             row: row_no,
             summary: parsed_row.summary.clone(),
             sheet_path,
+            sheet_abs_path,
             milestone: None,
         }),
         (sheet::Classification::Defer(n), WantClass::Defer) => Ok(Resolved {
@@ -246,6 +265,7 @@ fn resolve(sheet_id: &LitStr, row: &LitStr, want: WantClass) -> syn::Result<Reso
             row: row_no,
             summary: parsed_row.summary.clone(),
             sheet_path,
+            sheet_abs_path,
             milestone: Some(n.clone()),
         }),
         (actual, _) => Err(syn::Error::new(
@@ -269,7 +289,7 @@ fn resolve(sheet_id: &LitStr, row: &LitStr, want: WantClass) -> syn::Result<Reso
 
 /// Find and read the sheet for `id`, returning the workspace-relative
 /// path and the body. Looks under `builtins/` then `features/`.
-fn read_sheet(id: &str) -> Result<(String, String), String> {
+fn read_sheet(id: &str) -> Result<(String, String, String), String> {
     let specs_root = find_specs_root()
         .ok_or_else(|| "could not locate `Documents/specs/` from CARGO_MANIFEST_DIR".to_owned())?;
 
@@ -279,7 +299,11 @@ fn read_sheet(id: &str) -> Result<(String, String), String> {
             let body = fs::read_to_string(&candidate)
                 .map_err(|e| format!("failed to read `{}`: {e}", candidate.display()))?;
             let rel = format!("Documents/specs/{subdir}/{id}.md");
-            return Ok((rel, body));
+            // The absolute path is returned so the expansion can emit an
+            // `include_bytes!` that makes rustc treat the sheet as a
+            // compile-time input (PLAN_07 §8.2's rebuild coupling).
+            let abs = candidate.display().to_string();
+            return Ok((rel, abs, body));
         }
     }
     Err(format!(
