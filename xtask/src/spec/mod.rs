@@ -353,9 +353,9 @@ more prose
         // Pin the values themselves so any version bump must
         // intentionally update this test in the same commit, per
         // the upgrade policy in REFERENCE.md.
-        assert_eq!(pin.bash, "5.3p9");
-        assert_eq!(pin.coreutils, "9.10");
-        assert_eq!(pin.nixpkgs_rev, "d233902339c02a9c334e7e593de68855ad26c4cb");
+        assert_eq!(pin.bash, "5.3p15");
+        assert_eq!(pin.coreutils, "9.11");
+        assert_eq!(pin.nixpkgs_rev, "52eeb0a3222c9f93f6ed7325371185ac8180e3d9");
         assert_eq!(pin.nixpkgs_input, "nixpkgs-reference");
     }
 }

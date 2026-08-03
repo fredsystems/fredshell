@@ -19,11 +19,11 @@ any affected fixtures in the same commit.
 
 ```toml
 [reference]
-bash = "5.3p9"
-coreutils = "9.10"
-nixpkgs_rev = "d233902339c02a9c334e7e593de68855ad26c4cb"
+bash = "5.3p15"
+coreutils = "9.11"
+nixpkgs_rev = "52eeb0a3222c9f93f6ed7325371185ac8180e3d9"
 nixpkgs_input = "nixpkgs-reference"
-pinned_on = "2026-05-21"
+pinned_on = "2026-08-03"
 ```
 
 ## Why pin
