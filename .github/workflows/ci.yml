@@ -49,7 +49,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
-      - uses: dtolnay/rust-toolchain@67ef31d5b988238dd797d409d6f9574278e20537 # master
+      - uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88 # master
         with:
           toolchain: ${{ matrix.toolchain }}
           # `cargo xtask check` runs `cargo fmt` and `cargo clippy`,
@@ -59,7 +59,7 @@ jobs:
       # `cargo xtask check` invokes `cargo-machete` as part of the
       # mandatory verification suite. The bare runner has no nix
       # devShell, so install it explicitly here.
-      - uses: taiki-e/install-action@bffeee26d4db9be238a4ea78d8826604ebcb594d # v2.82.5
+      - uses: taiki-e/install-action@18b1216eba7f8039b0f8d131d5473787f0edce68 # v2.85.3
         with:
           tool: cargo-machete
       - run: cargo xtask check
