@@ -83,7 +83,7 @@ duct = "=1.1.1"
 assert_cmd = "=2.2.2"
 predicates = "=3.1.4"
 tempfile = "=3.27.0"
-trybuild = "=1.0.117"
+trybuild = "=1.0.120"
 
 # Benchmarking
 criterion = "=0.8.2"
