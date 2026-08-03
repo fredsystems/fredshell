@@ -1,0 +1,6 @@
+description = "`echo -e \"a\\tb\"` interprets backslash escapes when -e is given"
+script = """
+echo -e "a\\tb"
+"""
+status = "deferred:PLAN_12"
+tags = ["builtin", "echo"]

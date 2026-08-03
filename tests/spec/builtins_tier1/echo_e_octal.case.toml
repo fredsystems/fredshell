@@ -1,0 +1,6 @@
+description = "`echo -e \"\\0101\"` interprets a leading-zero octal escape \\0nnn"
+script = """
+echo -e "\\0101\\0102"
+"""
+status = "deferred:PLAN_12"
+tags = ["builtin", "echo"]

@@ -1,0 +1,6 @@
+description = "`echo -e \"\\x41\"` interprets a hexadecimal escape \\xHH"
+script = """
+echo -e "\\x41\\x42"
+"""
+status = "deferred:PLAN_12"
+tags = ["builtin", "echo"]

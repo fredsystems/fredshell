@@ -1,0 +1,7 @@
+description = "`echo` with no arguments writes a single newline"
+script = """
+echo > out
+echo "bytes=[$(<out)]"
+"""
+status = "deferred:PLAN_12"
+tags = ["builtin", "echo"]

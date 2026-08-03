@@ -1,0 +1,6 @@
+description = "`echo \"a\\tb\"` leaves backslash sequences literal by default (-E is the default)"
+script = """
+echo "a\\tb"
+"""
+status = "deferred:PLAN_12"
+tags = ["builtin", "echo"]

@@ -1,0 +1,6 @@
+description = "`echo a b c` writes its arguments separated by single spaces and a trailing newline"
+script = """
+echo a b c
+"""
+status = "deferred:PLAN_12"
+tags = ["builtin", "echo"]

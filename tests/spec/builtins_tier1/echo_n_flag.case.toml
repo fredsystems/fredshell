@@ -1,0 +1,7 @@
+description = "`echo -n x` suppresses the trailing newline"
+script = """
+echo -n x
+echo "[END]"
+"""
+status = "deferred:PLAN_12"
+tags = ["builtin", "echo"]
