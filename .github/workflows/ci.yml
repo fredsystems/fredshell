@@ -33,6 +33,15 @@ jobs:
           use-gha-cache: false
 
       - name: Run checks in devShell
+        env:
+          # `no-commit-to-branch` exists to stop developers committing
+          # directly to `main`. On a `push` to `main` the checked-out
+          # branch IS `main`, so the hook fails by construction and says
+          # nothing about the commit's quality. Skip it for that event
+          # only — `pull_request` and `merge_group` runs check out a
+          # detached merge commit, so the hook still passes there and the
+          # local pre-commit hook still enforces the rule for developers.
+          SKIP: ${{ github.event_name == 'push' && 'no-commit-to-branch' || '' }}
         run: |
           nix develop --impure --command bash -e -c '
             set -euxo pipefail
