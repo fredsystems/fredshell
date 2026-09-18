@@ -63,6 +63,11 @@ pub fn run(cmd: &SpecCmd) -> Result<()> {
 /// relative path is sufficient and stable.
 pub const REFERENCE_DOC: &str = "tests/spec/REFERENCE.md";
 
+/// Path to the flake, resolved relative to the workspace root. This
+/// is the authoritative home of the pin: `REFERENCE.md` documents
+/// the rev, but `flake.nix` is what nix actually evaluates.
+pub const FLAKE_NIX: &str = "flake.nix";
+
 /// Parsed pin from `tests/spec/REFERENCE.md` `[reference]` block.
 ///
 /// Field names mirror the TOML keys verbatim so a future migration
@@ -98,6 +103,84 @@ impl core::fmt::Display for ParseError {
 }
 
 impl std::error::Error for ParseError {}
+
+/// Errors surfaced while reading an input's pinned rev out of
+/// `flake.nix`.
+#[derive(Debug, PartialEq, Eq)]
+pub enum FlakeParseError {
+    /// No `<input>.url = "…";` binding was found for the input.
+    InputNotFound(String),
+    /// The input's URL carries no 40-character object name, so the
+    /// input is not pinned to a revision at all (e.g. it tracks a
+    /// branch such as `nixos-unstable`). For the reference input
+    /// that is itself the bug: an unpinned oracle drifts silently.
+    NotPinned {
+        /// The flake input name that was inspected.
+        input: String,
+        /// The URL found for that input.
+        url: String,
+    },
+}
+
+impl core::fmt::Display for FlakeParseError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::InputNotFound(input) => {
+                write!(f, "no `{input}.url = \"…\";` binding found in flake.nix")
+            }
+            Self::NotPinned { input, url } => write!(
+                f,
+                "flake input `{input}` is not pinned to a revision: {url}"
+            ),
+        }
+    }
+}
+
+impl std::error::Error for FlakeParseError {}
+
+/// Extract the pinned revision for `input` from `flake.nix` source.
+///
+/// Recognises the dotted form this flake uses:
+///
+/// ```text
+/// nixpkgs-reference.url = "github:nixos/nixpkgs/<rev>";
+/// ```
+///
+/// The revision is the final `/`-separated segment of the URL and
+/// must be a 40-character hex object name. A branch name or a bare
+/// `github:owner/repo` yields [`FlakeParseError::NotPinned`], which
+/// is a real failure for the reference input rather than a parse
+/// nicety.
+///
+/// Deliberately minimal, in the same spirit as [`parse_reference`]:
+/// a full Nix parser in `xtask` to read one string would be a poor
+/// trade.
+pub fn parse_flake_input_rev(flake: &str, input: &str) -> Result<String, FlakeParseError> {
+    let needle = format!("{input}.url");
+    for line in flake.lines() {
+        let trimmed = line.trim();
+        if !trimmed.starts_with(&needle) {
+            continue;
+        }
+        let Some((_, value)) = trimmed.split_once('=') else {
+            continue;
+        };
+        // Strip the statement terminator before the quotes.
+        let value = value.trim().trim_end_matches(';').trim();
+        let Some(url) = extract_quoted(value) else {
+            continue;
+        };
+        let rev = url.rsplit('/').next().unwrap_or_default();
+        if rev.len() == 40 && rev.bytes().all(|b| b.is_ascii_hexdigit()) {
+            return Ok(rev.to_owned());
+        }
+        return Err(FlakeParseError::NotPinned {
+            input: input.to_owned(),
+            url: url.to_owned(),
+        });
+    }
+    Err(FlakeParseError::InputNotFound(input.to_owned()))
+}
 
 /// Parse the `[reference]` block out of a `REFERENCE.md` document.
 ///
@@ -185,6 +268,72 @@ fn extract_quoted(value: &str) -> Option<&str> {
     Some(s)
 }
 
+/// Read the pinned rev for `input` out of `flake.nix`.
+fn read_flake_rev(input: &str) -> Result<String> {
+    let flake_path = Path::new(FLAKE_NIX);
+    let flake = match fs::read_to_string(flake_path) {
+        Ok(s) => s,
+        Err(e) => bail!(
+            "spec versions: failed to read {}: {e}",
+            flake_path.display()
+        ),
+    };
+    match parse_flake_input_rev(&flake, input) {
+        Ok(r) => Ok(r),
+        Err(e) => bail!(
+            "spec versions: failed to read the `{input}` pin from {}: {e}",
+            flake_path.display()
+        ),
+    }
+}
+
+/// Compare the declared pin against `flake.nix` and the devshell.
+///
+/// Collects every mismatch before failing, so a stale pin reports
+/// the rev *and* both versions in one run rather than making the
+/// caller fix them one at a time.
+fn verify_pin(
+    pin: &ReferencePin,
+    flake_rev: &str,
+    ref_bash: &str,
+    ref_coreutils: &str,
+) -> Result<()> {
+    let mut mismatches: Vec<String> = Vec::new();
+    // The rev is checked first because it is the root cause when the
+    // versions happen to agree: two different nixpkgs revs can ship
+    // identical bash/coreutils, so a version-only check reports "ok"
+    // while the documented pin is stale. That is exactly how
+    // REFERENCE.md drifted from flake.nix in #55.
+    if pin.nixpkgs_rev != flake_rev {
+        mismatches.push(format!(
+            "nixpkgs_rev: REFERENCE.md = {}, flake.nix = {flake_rev}",
+            pin.nixpkgs_rev
+        ));
+    }
+    if pin.bash != ref_bash {
+        mismatches.push(format!("bash: pin = {}, devshell = {ref_bash}", pin.bash));
+    }
+    if pin.coreutils != ref_coreutils {
+        mismatches.push(format!(
+            "coreutils: pin = {}, devshell = {ref_coreutils}",
+            pin.coreutils
+        ));
+    }
+    if !mismatches.is_empty() {
+        for m in &mismatches {
+            eprintln!("error: {m}");
+        }
+        bail!(
+            "spec versions: REFERENCE.md disagrees with flake.nix or the nix \
+             devshell. Per the upgrade policy in REFERENCE.md, the [reference] \
+             block and the `{}` rev in flake.nix must be updated in the same \
+             commit, re-recording any affected fixtures.",
+            pin.nixpkgs_input
+        );
+    }
+    Ok(())
+}
+
 /// `cargo xtask spec versions` body.
 fn run_versions() -> Result<()> {
     let doc_path = Path::new(REFERENCE_DOC);
@@ -214,6 +363,11 @@ fn run_versions() -> Result<()> {
         );
     };
 
+    // The rev declared in REFERENCE.md is only meaningful if it
+    // matches what nix actually evaluates, so read it from the flake
+    // rather than trusting the doc.
+    let flake_rev = read_flake_rev(&pin.nixpkgs_input)?;
+
     println!("fredshell spec versions");
     println!("======================");
     println!();
@@ -226,28 +380,11 @@ fn run_versions() -> Result<()> {
     println!("Resolved from `{}` (nix devshell):", pin.nixpkgs_input);
     println!("  bash       : {ref_bash}");
     println!("  coreutils  : {ref_coreutils}");
+    println!("  rev        : {flake_rev}");
     println!();
 
-    let mut mismatches: Vec<String> = Vec::new();
-    if pin.bash != ref_bash {
-        mismatches.push(format!("bash: pin = {}, devshell = {ref_bash}", pin.bash));
-    }
-    if pin.coreutils != ref_coreutils {
-        mismatches.push(format!(
-            "coreutils: pin = {}, devshell = {ref_coreutils}",
-            pin.coreutils
-        ));
-    }
-    if !mismatches.is_empty() {
-        for m in &mismatches {
-            eprintln!("error: {m}");
-        }
-        bail!(
-            "spec versions: REFERENCE.md disagrees with the nix devshell. \
-             Update the [reference] block or the nixpkgs-reference rev so they match."
-        );
-    }
-    println!("pin matches devshell: ok");
+    verify_pin(&pin, &flake_rev, ref_bash, ref_coreutils)?;
+    println!("pin matches flake.nix and devshell: ok");
 
     // Drift advisory: compare against the floating nixpkgs input.
     // Absence here is non-fatal — older devshells may not export
@@ -333,6 +470,128 @@ more prose
         let doc = "[reference]\nbash = \"5.3p9\"\ncoreutils = \"9.10\"\nnixpkgs_rev = \"r\"\nnixpkgs_input = \"i\"\npinned_on = \"d\"\n[other]\nbash = \"wrong\"\n";
         let pin = parse_reference(doc).expect("parse");
         assert_eq!(pin.bash, "5.3p9");
+    }
+
+    const REV: &str = "88ae3822eb8aec31f12a4a1895cb064413511177";
+
+    #[test]
+    fn parse_flake_input_rev_reads_the_dotted_url_form() {
+        let flake = format!("  nixpkgs-reference.url = \"github:nixos/nixpkgs/{REV}\";\n");
+        let rev = parse_flake_input_rev(&flake, "nixpkgs-reference").expect("parse");
+        assert_eq!(rev, REV);
+    }
+
+    /// The input name must match exactly. `nixpkgs-reference` and
+    /// `nixpkgs` share a prefix in the other direction, so a naive
+    /// `contains` would let the floating input satisfy a query for
+    /// the pinned one.
+    #[test]
+    fn parse_flake_input_rev_does_not_confuse_sibling_inputs() {
+        let flake = format!(
+            "nixpkgs.url = \"github:nixos/nixpkgs/nixos-unstable\";\n\
+             nixpkgs-reference.url = \"github:nixos/nixpkgs/{REV}\";\n"
+        );
+        let rev = parse_flake_input_rev(&flake, "nixpkgs-reference").expect("parse");
+        assert_eq!(rev, REV);
+    }
+
+    #[test]
+    fn parse_flake_input_rev_rejects_an_unpinned_input() {
+        let flake = "nixpkgs.url = \"github:nixos/nixpkgs/nixos-unstable\";\n";
+        let err = parse_flake_input_rev(flake, "nixpkgs").unwrap_err();
+        assert_eq!(
+            err,
+            FlakeParseError::NotPinned {
+                input: "nixpkgs".to_owned(),
+                url: "github:nixos/nixpkgs/nixos-unstable".to_owned(),
+            }
+        );
+    }
+
+    /// A truncated digest is not a revision. Renovate renders short
+    /// digests in PR titles, so a hand-copied `88ae382` must fail
+    /// rather than silently compare unequal to the full rev.
+    #[test]
+    fn parse_flake_input_rev_rejects_a_short_digest() {
+        let flake = "nixpkgs-reference.url = \"github:nixos/nixpkgs/88ae382\";\n";
+        let err = parse_flake_input_rev(flake, "nixpkgs-reference").unwrap_err();
+        assert!(matches!(err, FlakeParseError::NotPinned { .. }));
+    }
+
+    #[test]
+    fn parse_flake_input_rev_reports_a_missing_input() {
+        let err = parse_flake_input_rev("{}\n", "nixpkgs-reference").unwrap_err();
+        assert_eq!(
+            err,
+            FlakeParseError::InputNotFound("nixpkgs-reference".to_owned())
+        );
+    }
+
+    fn pin_fixture() -> ReferencePin {
+        ReferencePin {
+            bash: "5.3p15".to_owned(),
+            coreutils: "9.11".to_owned(),
+            nixpkgs_rev: REV.to_owned(),
+            nixpkgs_input: "nixpkgs-reference".to_owned(),
+            pinned_on: "2026-09-18".to_owned(),
+        }
+    }
+
+    #[test]
+    fn verify_pin_accepts_a_consistent_pin() {
+        verify_pin(&pin_fixture(), REV, "5.3p15", "9.11").expect("consistent pin");
+    }
+
+    /// The #55 scenario exactly: the rev is stale but both versions
+    /// still agree, because the two revs ship the same bash and
+    /// coreutils. A version-only check passes here; this must not.
+    #[test]
+    fn verify_pin_rejects_a_stale_rev_even_when_versions_agree() {
+        let err = verify_pin(
+            &pin_fixture(),
+            "aec71e3ada2e0b6bebd3d84c01523eb137dff06f",
+            "5.3p15",
+            "9.11",
+        )
+        .expect_err("stale rev must fail");
+        assert!(
+            err.to_string().contains("disagrees with flake.nix"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn verify_pin_rejects_a_version_mismatch() {
+        let err = verify_pin(&pin_fixture(), REV, "5.4p1", "9.11")
+            .expect_err("bash version mismatch must fail");
+        assert!(
+            err.to_string().contains("disagrees with flake.nix"),
+            "unexpected error: {err}"
+        );
+    }
+
+    /// The guard that #55 was missing: `REFERENCE.md` and `flake.nix`
+    /// must name the same rev. Both files are read from disk so this
+    /// fails if either drifts, regardless of whether the bash and
+    /// coreutils versions happen to agree.
+    #[test]
+    fn on_disk_reference_doc_rev_matches_the_flake() {
+        let manifest = env!("CARGO_MANIFEST_DIR");
+        let root = Path::new(manifest).join("..");
+
+        let doc = fs::read_to_string(root.join(REFERENCE_DOC)).expect("read REFERENCE.md");
+        let pin = parse_reference(&doc).expect("parse REFERENCE.md");
+
+        let flake = fs::read_to_string(root.join(FLAKE_NIX)).expect("read flake.nix");
+        let flake_rev =
+            parse_flake_input_rev(&flake, &pin.nixpkgs_input).expect("read the pin from flake.nix");
+
+        assert_eq!(
+            pin.nixpkgs_rev, flake_rev,
+            "REFERENCE.md pins {} but flake.nix pins {flake_rev}; per the \
+             upgrade policy both must change in the same commit",
+            pin.nixpkgs_rev
+        );
     }
 
     /// Regression test for `PLAN_05` 05.3: the on-disk
