@@ -139,6 +139,21 @@
               pkgs = import nixpkgs { inherit system; };
               referencePkgs = import nixpkgs-reference { inherit system; };
 
+              # `rust-bin` only exists once the rust-overlay is applied.
+              # The default shell takes its toolchain from mkCheck, so it
+              # does not need this; the nightly shell below does.
+              rustPkgs = import nixpkgs {
+                inherit system;
+                overlays = [ rust-overlay.overlays.default ];
+              };
+
+              nightlyToolchain = rustPkgs.rust-bin.nightly.latest.default.override {
+                extensions = [
+                  "clippy"
+                  "rustfmt"
+                ];
+              };
+
               chk = self.checks.${system}."pre-commit-check";
 
               corePkgs = chk.enabledPackages or [ ];
@@ -196,6 +211,60 @@
                   ${chk.shellHook}
 
                   alias pre-commit="pre-commit run --all-files"
+                '';
+              };
+
+              # Reproduces the CI `check` matrix's nightly leg locally.
+              #
+              # CI runs `cargo xtask check` on both stable and nightly, but
+              # the default shell only carries the stable toolchain, so a
+              # nightly-only lint break (e.g. a newly-added
+              # `clippy::nursery` lint) could not be reproduced without
+              # this shell. That gap let a single new lint hold twelve
+              # dependency PRs red.
+              #
+              # This shell deliberately OMITS `extraDev` and `corePkgs`.
+              # Those carry the stable rustc/cargo/clippy and the
+              # pre-commit tooling; putting them alongside the nightly
+              # toolchain would put two toolchains on PATH and trip the
+              # E0514 failure documented on the default shell above.
+              # Consequence: this shell has no pre-commit hooks and no
+              # cargo-deny/llvm-cov. Commit from the default shell; use
+              # this one only to run `cargo xtask check` on nightly.
+              #
+              # CARGO_TARGET_DIR is separate so swapping between shells
+              # does not invalidate the stable build cache every time.
+              # It is set in the shellHook rather than as a static env
+              # var because it MUST be absolute — see the note there.
+              nightly = pkgs.mkShell {
+                buildInputs = [
+                  nightlyToolchain
+                  pkgs.cargo-machete
+                ];
+
+                # Same pinned spec-harness reference as the default shell —
+                # `cargo xtask check` runs `cargo test --workspace`, which
+                # includes the spec corpus.
+                FREDSHELL_REFERENCE_BASH = "${referencePkgs.bash}/bin/bash";
+                FREDSHELL_REFERENCE_COREUTILS = "${referencePkgs.coreutils}/bin";
+                FREDSHELL_REFERENCE_BASH_VERSION = referencePkgs.bash.version;
+                FREDSHELL_REFERENCE_COREUTILS_VERSION = referencePkgs.coreutils.version;
+                FREDSHELL_FLOATING_BASH_VERSION = pkgs.bash.version;
+                FREDSHELL_FLOATING_COREUTILS_VERSION = pkgs.coreutils.version;
+
+                shellHook = ''
+                  # CARGO_TARGET_DIR MUST be absolute. A relative value is
+                  # resolved against each cargo invocation's cwd, and
+                  # trybuild runs cargo from inside
+                  # crates/fredshell-spec-macros. A relative
+                  # "target/nightly" therefore produces a second target
+                  # tree at crates/fredshell-spec-macros/target/nightly,
+                  # which the root-anchored `/target/` gitignore does not
+                  # cover — cargo-machete then walks trybuild's generated
+                  # manifests and fails `cargo xtask check` with bogus
+                  # unused-dependency findings.
+                  CARGO_TARGET_DIR="$(git rev-parse --show-toplevel 2>/dev/null || pwd)/target/nightly"
+                  export CARGO_TARGET_DIR
                 '';
               };
             };
