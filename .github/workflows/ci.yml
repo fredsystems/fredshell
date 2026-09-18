@@ -90,6 +90,22 @@ jobs:
           use-flakehub: false
           use-gha-cache: false
 
+      # Verifies that tests/spec/REFERENCE.md, the nixpkgs-reference
+      # rev in flake.nix, and the bash/coreutils the devshell actually
+      # resolves all agree. The rev half of that is also covered by a
+      # unit test, but the version half needs the FREDSHELL_REFERENCE_*
+      # vars the devshell exports, so it can only run here.
+      #
+      # Runs before the compat report: if the oracle is not the one the
+      # fixtures were recorded against, the compat numbers are measuring
+      # the wrong thing and the report is misleading rather than useful.
+      - name: Verify the pinned reference toolchain
+        run: |
+          nix develop --impure --command bash -e -c '
+            set -euxo pipefail
+            cargo xtask spec versions
+          '
+
       - name: Run cargo xtask compat
         run: |
           nix develop --impure --command bash -e -c '

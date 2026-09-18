@@ -26,6 +26,12 @@
       "matchManagers": ["github-actions", "nix"],
       "matchUpdateTypes": ["major", "minor", "patch", "pin"],
       "automerge": true
+    },
+    {
+      "description": "The nixpkgs-reference input is the pinned oracle for the bash-compat spec corpus (PLAN_05 4.5). Its upgrade policy in tests/spec/REFERENCE.md requires the [reference] block and the flake.nix rev to change in the same commit, re-recording any affected fixtures. Renovate cannot do either, so a bot PR here is unmergeable as-is and only adds noise; #45 sat open for weeks for exactly this reason. Version drift versus nixos-unstable is already surfaced advisorily by `cargo xtask spec versions`, so nothing is lost by disabling it. Bump this pin by hand.",
+      "matchManagers": ["nix"],
+      "matchDepNames": ["nixpkgs-reference"],
+      "enabled": false
     }
   ]
 }
