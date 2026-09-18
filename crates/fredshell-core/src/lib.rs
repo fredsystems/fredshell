@@ -114,6 +114,7 @@ impl std::error::Error for CoreError {
 /// richer than a non-zero exit status.
 #[derive(Debug)]
 #[non_exhaustive]
+#[allow(clippy::empty_enums)] // Intentionally uninhabited today; variants land later.
 pub enum BuiltinError {}
 
 impl fmt::Display for BuiltinError {
