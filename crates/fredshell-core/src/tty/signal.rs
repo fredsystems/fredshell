@@ -586,7 +586,7 @@ mod tests {
         let handlers = Handlers { reader };
         let mut buf = [0u8; 8];
         let drained = handlers.drain(&mut buf).unwrap();
-        assert!(drained.is_empty());
+        assert_eq!(drained, []);
     }
 
     #[test]
@@ -621,7 +621,7 @@ mod tests {
         let handlers = Handlers { reader };
         let mut buf: [u8; 0] = [];
         let drained = handlers.drain(&mut buf).unwrap();
-        assert!(drained.is_empty());
+        assert_eq!(drained, []);
     }
 
     #[test]

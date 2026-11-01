@@ -416,7 +416,7 @@ mod tests {
         let mut expected = Expected::default();
         decode_available(&mut buf, &mut expected, &mut caps);
 
-        assert!(buf.is_empty());
+        assert_eq!(buf, b"");
         assert!(expected.da1);
         assert_eq!(caps.color, ColorSupport::Ansi16);
     }

@@ -329,7 +329,7 @@ mod tests {
             testing::run_source_capturing("exit\necho unreachable\n", &mut env).expect("ok");
         assert_eq!(captured.result.status, ExitStatus::SUCCESS);
         assert!(captured.result.exit_requested);
-        assert!(captured.stdout.is_empty());
+        assert_eq!(captured.stdout, b"");
     }
 
     #[test]
@@ -376,7 +376,7 @@ mod tests {
         let captured = testing::run_source_capturing("echo hi", &mut env).expect("ok");
         assert_eq!(captured.result.status, ExitStatus::SUCCESS);
         assert_eq!(captured.stdout, b"hi\n");
-        assert!(captured.stderr.is_empty());
+        assert_eq!(captured.stderr, b"");
     }
 
     #[test]
@@ -385,7 +385,7 @@ mod tests {
         let mut env = sandbox();
         let captured = testing::run_source_capturing("echo bad 1>&2", &mut env).expect("ok");
         assert_eq!(captured.result.status, ExitStatus::SUCCESS);
-        assert!(captured.stdout.is_empty());
+        assert_eq!(captured.stdout, b"");
         assert_eq!(captured.stderr, b"bad\n");
     }
 

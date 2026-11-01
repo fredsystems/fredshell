@@ -352,12 +352,12 @@ script = "exit 0\n"
         assert_eq!(c.description, "minimal");
         assert_eq!(c.status, CaseStatus::Pass);
         assert_eq!(c.script, "exit 0\n");
-        assert!(c.tags.is_empty());
+        assert_eq!(c.tags, Vec::<String>::new());
         assert!(c.bash_version_min.is_none());
         assert!(c.env.home.is_none());
         assert!(c.fs_skeleton.is_none());
-        assert!(c.expected.stdout.is_empty());
-        assert!(c.expected.stderr.is_empty());
+        assert_eq!(c.expected.stdout, b"");
+        assert_eq!(c.expected.stderr, b"");
         assert_eq!(c.expected.exit, 0);
     }
 

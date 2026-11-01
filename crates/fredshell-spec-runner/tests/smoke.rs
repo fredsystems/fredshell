@@ -37,8 +37,8 @@ fn exit_zero_smoke_case_passes() {
 
     let case = Case::load(&case_path).expect("smoke case loads cleanly");
     assert_eq!(case.script, "exit 0\n");
-    assert!(case.expected.stdout.is_empty());
-    assert!(case.expected.stderr.is_empty());
+    assert_eq!(case.expected.stdout, b"");
+    assert_eq!(case.expected.stderr, b"");
     assert_eq!(case.expected.exit, 0);
 
     let result = run_case(&case).expect("smoke case runs without harness-level error");

@@ -819,7 +819,7 @@ mod tests {
         let row = parse_support_row("| 3.1 | cd dir | support |  |")
             .expect("row with a blank Corpus cell should still parse");
         assert_eq!(row.number, "3.1");
-        assert!(row.corpus.is_empty());
+        assert_eq!(row.corpus, "");
     }
 
     // --- parse_sheet ------------------------------------------------
@@ -831,14 +831,14 @@ mod tests {
         assert_eq!(sheet.rows.len(), 1);
         assert_eq!(sheet.rows[0].number, "3.1");
         assert!(sheet.sections.contains(&"## 3. Support matrix".to_owned()));
-        assert!(!sheet.deferred_body.is_empty());
+        assert_ne!(sheet.deferred_body, "");
     }
 
     #[test]
     fn parse_sheet_detects_empty_deferred_section() {
         let body = "## 1. Synopsis\n\nx\n\n## 6. Deferred rows\n\n## 8. References\n";
         let sheet = parse_sheet("x", body);
-        assert!(sheet.deferred_body.is_empty());
+        assert_eq!(sheet.deferred_body, "");
     }
 
     #[test]
@@ -904,7 +904,7 @@ mod tests {
     #[test]
     fn validate_structure_passes_for_valid_sheet() {
         let sheet = parse_sheet("cd", &valid_sheet_body("builtins/cd_dir.case.toml"));
-        assert!(validate_sheet_structure(&sheet).is_empty());
+        assert_eq!(validate_sheet_structure(&sheet), Vec::<SheetError>::new());
     }
 
     #[test]
@@ -949,7 +949,7 @@ mod tests {
              - **3.1 — `-e`.** Use `cd && ls` for now.\n\n\
              ## 8. References\n\nx\n";
         let sheet = parse_sheet("cd", body);
-        assert!(validate_sheet_structure(&sheet).is_empty());
+        assert_eq!(validate_sheet_structure(&sheet), Vec::<SheetError>::new());
     }
 
     // --- check_support_row_resolves --------------------------------
@@ -1000,7 +1000,7 @@ mod tests {
             check_support_row_resolves(tmp.path(), "cd", &row, &mut refs),
             1
         );
-        assert!(refs.is_empty());
+        assert_eq!(refs, Vec::<CorpusRef>::new());
     }
 
     #[test]
