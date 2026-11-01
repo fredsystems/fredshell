@@ -176,8 +176,8 @@ mod tests {
         let mut env = sandbox();
         let c = run_source_capturing("", &mut env).expect("ok");
         assert_eq!(c.result.status, ExitStatus::SUCCESS);
-        assert!(c.stdout.is_empty());
-        assert!(c.stderr.is_empty());
+        assert_eq!(c.stdout, b"");
+        assert_eq!(c.stderr, b"");
     }
 
     #[test]
@@ -245,7 +245,7 @@ mod tests {
         let mut handle = buf.clone();
         handle.write_all(b"hello").expect("write ok");
         assert_eq!(buf.take(), b"hello");
-        assert!(buf.take().is_empty());
+        assert_eq!(buf.take(), b"");
     }
 
     #[test]

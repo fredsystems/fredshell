@@ -696,7 +696,7 @@ mod tests {
         let (r, n) = Da1Response::decode(input).unwrap();
         assert_eq!(n, 5);
         assert_eq!(r.id, 6);
-        assert!(r.capabilities().is_empty());
+        assert_eq!(r.capabilities(), []);
     }
 
     #[test]
@@ -969,7 +969,7 @@ mod tests {
         let input = b"\x1b]52;p;\x1b\\";
         let (r, _) = Osc52ReadResponse::decode(input).unwrap();
         assert_eq!(r.selection, Osc52Selection::Primary);
-        assert!(r.payload.is_empty());
+        assert_eq!(r.payload, b"");
     }
 
     #[test]

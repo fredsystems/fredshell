@@ -542,7 +542,7 @@ mod tests {
         let mut line_buf = Vec::new();
         let outcome = pump_input_once(input, Some(output), &mut line_buf).unwrap();
         assert_eq!(outcome, InputOutcome::Interrupted);
-        assert!(line_buf.is_empty());
+        assert_eq!(line_buf, b"");
 
         // The pump echoes the leading "abc" then "^C\r\n".
         let mut master_reader = std::fs::File::from(pty.master().try_clone().unwrap());
@@ -625,7 +625,7 @@ mod tests {
         let mut line_buf = Vec::new();
         let outcome = pump_input_once(input, Some(output), &mut line_buf).unwrap();
         assert_eq!(outcome, InputOutcome::Continue);
-        assert!(line_buf.is_empty());
+        assert_eq!(line_buf, b"");
     }
 
     #[test]

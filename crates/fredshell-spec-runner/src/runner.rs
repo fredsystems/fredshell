@@ -361,7 +361,7 @@ mod tests {
         let mut handle = buf.clone();
         handle.write_all(b"once").unwrap();
         assert_eq!(buf.take(), b"once");
-        assert!(buf.take().is_empty());
+        assert_eq!(buf.take(), b"");
     }
 
     #[test]

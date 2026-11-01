@@ -275,7 +275,7 @@ mod tests {
 
         assert_eq!(status, ExitStatus::SUCCESS);
         assert_eq!(stdout, b"echo-args hi there\n");
-        assert!(stderr.is_empty());
+        assert_eq!(stderr, b"");
     }
 
     #[test]
