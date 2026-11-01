@@ -77,7 +77,7 @@ libc = "=0.2.189"
 
 # xtask helpers
 base64 = "=0.23.1"
-duct = "=1.1.1"
+duct = "=1.1.2"
 
 # Test helpers
 assert_cmd = "=2.2.2"
